@@ -8,7 +8,6 @@ import (
   	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
 	"os"
-    "os/exec"
 	"syscall"
 	"time"
 	"encoding/json"
@@ -49,11 +48,7 @@ type Configuration struct {
 		Read_only_password string
 	}
 }
-type Mailtemplates struct {
-	Standard string
-	Noreset  string
-	Nobutton string
-}
+
 type Host struct {
 	Hostname string `bson:"hostname"`
 	Ip string `bson:"ip"`

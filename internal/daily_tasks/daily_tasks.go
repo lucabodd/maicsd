@@ -7,7 +7,15 @@ import (
     ldap_client "github.com/lucabodd/go-ldap-client"
     . "github.com/lucabodd/maicsd/pkg/utils"
     "log"
+    "os"
+    "encoding/json"
 )
+
+type Mailtemplates struct {
+	Standard string
+	Noreset  string
+	Nobutton string
+}
 
 //slow tasks
 /************************************
