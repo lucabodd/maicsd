@@ -191,7 +191,7 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
 		for cur.Next(context.TODO()) {
 		   var user User
            log.Println(cur)
-           
+           Kill(1)
 		   err := cur.Decode(&user)
 		   Check(err)
 		   ACL_users = append(ACL_users, &user)
