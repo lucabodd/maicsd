@@ -69,5 +69,6 @@ func SshKeyExpire(mdb *mongo.Client, mongo_instance string, ldap *ldap_client.LD
 func AccessMatrixReport () {
     cmd := exec.Command("/usr/bin/python", "../../scripts/report.py")
     err := cmd.Run()
+    log.Println(err)
     Check(err)
 }
