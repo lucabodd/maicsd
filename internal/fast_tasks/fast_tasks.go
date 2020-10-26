@@ -31,6 +31,19 @@ type Hostgroup struct {
 	Members []Host
 }
 
+type Access_group struct {
+	Group string `bson:"group"`
+	Hostname string `bson:"hostname"`
+}
+
+type Access_user struct {
+    Sys_username string `bson:"sys_username"`
+	Email string `bson:"email"`
+    Name string `bson:"name"`
+    Surname string `bson:"surname"`
+    Hostname string `bson:"hostname"`
+}
+
 type User struct {
 	Sys_username string `bson:"sys_username"`
 	Email string `bson:"email"`
@@ -163,7 +176,7 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
 	// Define collections
 	hosts := mdb.Database(mongo_instance).Collection("hosts")
 	access_users := mdb.Database(mongo_instance).Collection("access_users")
-    //access_groups := mdb.Database(mongo_instance).Collection("access_groups")
+    access_groups := mdb.Database(mongo_instance).Collection("access_groups")
 	users := mdb.Database(mongo_instance).Collection("users")
 
 	// Get all Hosts
@@ -183,18 +196,18 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
 
 	// Iterate trough all hosts and define ACL_users
 	for _, h := range res_hosts {
-		ACL_users := []*User{}
+		ACL_users := []string {}
+        ACL_groups := []string {}
 
+        //find users with access right to the host
 		cur, err = access_users.Find(context.TODO(), bson.M{"hostname":h.Hostname}, findOptions)
 		Check(err)
 		defer cur.Close(context.TODO())
 		for cur.Next(context.TODO()) {
-		   var user User
-           log.Println(cur)
-           Kill(1)
-		   err := cur.Decode(&user)
+		   var access_entry Access_user
+		   err := cur.Decode(&access_entry)
 		   Check(err)
-		   ACL_users = append(ACL_users, &user)
+		   ACL_users = append(ACL_users, access_entry.Sys_username)
 		}
 		err := cur.Err()
 		Check(err)
@@ -207,17 +220,34 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
 		   var user User
 		   err := cur.Decode(&user)
 		   Check(err)
-		   ACL_users = append(ACL_users, &user)
+		   ACL_users = append(ACL_users, user.Sys_username)
 		}
 		err = cur.Err()
 		Check(err)
 
-		// get all users in string
-		ACL_users_string := skdc_user + " root"
-		for _,a := range ACL_users {
-			ACL_users_string = ACL_users_string + " " + a.Sys_username
+        //add default MAICS user and root
+        ACL_users = append(ACL_users, skdc_user)
+        ACL_users = append(ACL_users, "root")
+
+        ACL_users_string := strings.Join(ACL_users[:], " ")
+        log.Println(ACL_users_string)
+
+        //find groups with access right to the host
+		findOptProj = options.Find().SetProjection(bson.M{"group": 1})
+		cur, err = access_groups.Find(context.TODO(), bson.M{"hostname":h.Hostname}, findOptProj)
+		defer cur.Close(context.TODO())
+		for cur.Next(context.TODO()) {
+		   var access_entry Access_group
+		   err := cur.Decode(&access_entry)
+		   Check(err)
+		   ACL_groups = append(ACL_groups, access_entry.Group)
 		}
-		b64_banner := base64.StdEncoding.EncodeToString([]byte(h.Hostname))
+		err = cur.Err()
+		Check(err)
+
+        ACL_groups_string := strings.Join(ACL_groups[:], " ")
+        log.Println(ACL_groups_string)
+        Kill(1)
 
 		playbook := &ansible.PlaybookCmd{
 			Playbook:          skdc_dir+"ansible/playbooks/sshd-config-deploy.yml",
@@ -227,8 +257,8 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
     			                     Limit: h.Hostname,
     			                     ExtraVars: map[string]interface{}{
     				                                "sshd_users": ACL_users_string,
-    				                                "port": h.Port,
-    				                                "banner": b64_banner,
+                                                    "sshd_groups": ACL_groups_string,
+    				                                "maics_ssh_port": h.Port,
     			                                 },
                                },
 		}
