@@ -5,6 +5,7 @@ import (
     "strings"
     "go.mongodb.org/mongo-driver/mongo"
     "go.mongodb.org/mongo-driver/mongo/options"
+    "go.mongodb.org/mongo-driver/bson"
     ldap_client "github.com/lucabodd/go-ldap-client"
     . "github.com/lucabodd/maicsd/pkg/utils"
     "log"
