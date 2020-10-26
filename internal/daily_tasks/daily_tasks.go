@@ -1,5 +1,13 @@
 package daily_tasks
 
+import (
+    "go.mongodb.org/mongo-driver/bson"
+    "go.mongodb.org/mongo-driver/mongo"
+    "go.mongodb.org/mongo-driver/mongo/options"
+    ldap_client "github.com/lucabodd/go-ldap-client"
+    . "github.com/lucabodd/maicsd/pkg/utils"
+)
+
 //slow tasks
 /************************************
 	Task executed daily

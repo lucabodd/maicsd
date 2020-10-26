@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"github.com/sevlyar/go-daemon"
-	ldap_client "github.com/lucabodd/go-ldap-client"
 	"go.mongodb.org/mongo-driver/bson"
   	"go.mongodb.org/mongo-driver/mongo"
   	"go.mongodb.org/mongo-driver/mongo/options"
