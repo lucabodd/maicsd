@@ -47,11 +47,6 @@ type Configuration struct {
 	}
 }
 
-type Cluster struct {
-	Name string `bson:"name"`
-	Members []Host
-}
-
 func main() {
 	//parsing flags
 	c := flag.String("c", "","Specify the configuration file.")
