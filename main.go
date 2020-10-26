@@ -13,8 +13,6 @@ import (
 	"encoding/json"
 	"context"
 	"net/mail"
-	"strconv"
-	"strings"
 	fast_tasks "github.com/lucabodd/maicsd/internal/fast_tasks"
 	slow_tasks "github.com/lucabodd/maicsd/internal/slow_tasks"
 	daily_tasks "github.com/lucabodd/maicsd/internal/daily_tasks"
