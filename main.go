@@ -16,6 +16,7 @@ import (
 	daily_tasks "github.com/lucabodd/maicsd/internal/daily_tasks"
 	ldap_client "github.com/lucabodd/go-ldap-client"
 	. "github.com/lucabodd/maicsd/pkg/utils"
+	"strings"
 )
 
 var (
