@@ -2,7 +2,7 @@ package daily_tasks
 
 import (
     "net/mail"
-    "go.mongodb.org/mongo-driver/bson"
+    "strings"
     "go.mongodb.org/mongo-driver/mongo"
     "go.mongodb.org/mongo-driver/mongo/options"
     ldap_client "github.com/lucabodd/go-ldap-client"
