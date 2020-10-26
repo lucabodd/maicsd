@@ -163,7 +163,7 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
 	// Define collections
 	hosts := mdb.Database(mongo_instance).Collection("hosts")
 	access_users := mdb.Database(mongo_instance).Collection("access_users")
-    access_groups := mdb.Database(mongo_instance).Collection("access_groups")
+    //access_groups := mdb.Database(mongo_instance).Collection("access_groups")
 	users := mdb.Database(mongo_instance).Collection("users")
 
 	// Get all Hosts
