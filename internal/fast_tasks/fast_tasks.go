@@ -162,7 +162,8 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
 
 	// Define collections
 	hosts := mdb.Database(mongo_instance).Collection("hosts")
-	access := mdb.Database(mongo_instance).Collection("access")
+	access_users := mdb.Database(mongo_instance).Collection("access_users")
+    access_groups := mdb.Database(mongo_instance).Collection("access_groups")
 	users := mdb.Database(mongo_instance).Collection("users")
 
 	// Get all Hosts
@@ -180,17 +181,20 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
 	err = cur.Err()
 	Check(err)
 
-	// Iterate trough all hosts and define ACL
+	// Iterate trough all hosts and define ACL_users
 	for _, h := range res_hosts {
-		ACL := []*User{}
-		cur, err = access.Find(context.TODO(), bson.M{"hostname":h.Hostname}, findOptions)
+		ACL_users := []*User{}
+
+		cur, err = access_users.Find(context.TODO(), bson.M{"hostname":h.Hostname}, findOptions)
 		Check(err)
 		defer cur.Close(context.TODO())
 		for cur.Next(context.TODO()) {
 		   var user User
+           log.Println(cur)
+           
 		   err := cur.Decode(&user)
 		   Check(err)
-		   ACL = append(ACL, &user)
+		   ACL_users = append(ACL_users, &user)
 		}
 		err := cur.Err()
 		Check(err)
@@ -203,15 +207,15 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
 		   var user User
 		   err := cur.Decode(&user)
 		   Check(err)
-		   ACL = append(ACL, &user)
+		   ACL_users = append(ACL_users, &user)
 		}
 		err = cur.Err()
 		Check(err)
 
 		// get all users in string
-		ACL_string := skdc_user + " root"
-		for _,a := range ACL {
-			ACL_string = ACL_string + " " + a.Sys_username
+		ACL_users_string := skdc_user + " root"
+		for _,a := range ACL_users {
+			ACL_users_string = ACL_users_string + " " + a.Sys_username
 		}
 		b64_banner := base64.StdEncoding.EncodeToString([]byte(h.Hostname))
 
@@ -222,7 +226,7 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
     			                     Inventory: skdc_dir+"ansible/inventory",
     			                     Limit: h.Hostname,
     			                     ExtraVars: map[string]interface{}{
-    				                                "sshd_users": ACL_string,
+    				                                "sshd_users": ACL_users_string,
     				                                "port": h.Port,
     				                                "banner": b64_banner,
     			                                 },

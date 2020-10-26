@@ -47,26 +47,9 @@ type Configuration struct {
 	}
 }
 
-type Host struct {
-	Hostname string `bson:"hostname"`
-	Ip string `bson:"ip"`
-	Port string `bson:"port"`
-	Proxy string `bson:"proxy"`
-}
 type Cluster struct {
 	Name string `bson:"name"`
 	Members []Host
-}
-type User struct {
-	Sys_username string `bson:"sys_username"`
-	Email string `bson:"email"`
-	Role string `bson:"role"`
-	Key_last_unlock string `bson:"key_last_unlock"`
-	PubKey string `bson:"pubKey"`
-	Password string `bson:"password"`
-	Otp_secret string `bson:"otp_secret"`
-	PwdChangedTime string `bson:"pwdChangedTime"`
-	PwdAccountLockedTime *string `bson:"pwdAccountLockedTime"`
 }
 
 func main() {
