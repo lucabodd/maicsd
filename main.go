@@ -12,7 +12,6 @@ import (
 	"time"
 	"encoding/json"
 	"context"
-	"net/mail"
 	fast_tasks "github.com/lucabodd/maicsd/internal/fast_tasks"
 	slow_tasks "github.com/lucabodd/maicsd/internal/slow_tasks"
 	daily_tasks "github.com/lucabodd/maicsd/internal/daily_tasks"
