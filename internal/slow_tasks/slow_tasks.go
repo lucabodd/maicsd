@@ -64,3 +64,9 @@ func SshKeyExpire(mdb *mongo.Client, mongo_instance string, ldap *ldap_client.LD
 	}
 	log.Println("[+] Expired keys locked successfully")
 }
+
+func AccessMatrixReport () {
+    cmd := exec.Command("/usr/bin/python", "../../scripts/report.py")
+    err = cmd.Run()
+    Check(err)
+}

@@ -230,7 +230,6 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
 		}
 
 		res, err := playbook.Run()
-        Check(err)
 		error = ""
 		//read connection status
 		if err != nil {
