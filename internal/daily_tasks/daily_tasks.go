@@ -1,4 +1,4 @@
-
+package daily_tasks
 
 //slow tasks
 /************************************
