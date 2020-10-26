@@ -2,7 +2,6 @@ package daily_tasks
 
 import (
     "net/mail"
-    "strings"
     "go.mongodb.org/mongo-driver/mongo"
     "go.mongodb.org/mongo-driver/mongo/options"
     "go.mongodb.org/mongo-driver/bson"
