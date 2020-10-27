@@ -230,7 +230,6 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
         ACL_users = append(ACL_users, "root")
 
         ACL_users_string := strings.Join(ACL_users[:], " ")
-        log.Println(ACL_users_string)
 
         //find groups with access right to the host
 		findOptProj = options.Find().SetProjection(bson.M{"group": 1})
@@ -245,9 +244,11 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
 		err = cur.Err()
 		Check(err)
 
-        ACL_groups_string := strings.Join(ACL_groups[:], " ")
-        log.Println(ACL_groups_string)
-        Kill(1)
+        //conmposing /etc/ssh/sshd_config access string
+        sshd_config_access := "AllowUsers " + ACL_users_string + "\n"
+        for _ , group_entry := range ACL_groups {
+			sshd_config_access += "Match Group "+group_entry+"\n     AllowUsers *\n"
+		}
 
 		playbook := &ansible.PlaybookCmd{
 			Playbook:          skdc_dir+"ansible/playbooks/sshd-config-deploy.yml",
@@ -256,8 +257,7 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
     			                     Inventory: skdc_dir+"ansible/inventory",
     			                     Limit: h.Hostname,
     			                     ExtraVars: map[string]interface{}{
-    				                                "sshd_users": ACL_users_string,
-                                                    "sshd_groups": ACL_groups_string,
+    				                                "sshd_allow_block": sshd_config_access,
     				                                "maics_ssh_port": h.Port,
     			                                 },
                                },
@@ -270,12 +270,20 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
             error = res.RawStdout
 			if (strings.Contains(res.RawStdout, "Missing sudo") || strings.Contains(res.RawStdout, "password is required to run sudo") || strings.Contains(res.RawStdout, "sudo: not found")) {
 				conn = "SUDOERR"
+                error = "Shared connection to 10.60.0.170 closed. /bin/sh: 1: sudo: not found"
 			} else if(strings.Contains(res.RawStdout, "Failed to connect") || res.Unreachable > 0){
 				conn = "EARLY-FAIL"
+                log.Println(res)
+                log.Println(err)
+                Kill(1)
 			} else if(strings.Contains(res.RawStdout, "CLI-UNDEPLOYED")){
 				conn = "CLI-UNDEPLOYED"
+                log.Println(res.RawStdout)
+                log.Println(err)
 			} else {
 				conn = "UNKNOWN"
+                log.Println(res.RawStdout)
+                log.Println(err)
 			}
 			//logging
 			if error != "" {
