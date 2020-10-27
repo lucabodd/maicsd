@@ -70,11 +70,11 @@ func main() {
 	}
 
     cntxt := &daemon.Context{
-		PidFileName: Config.Maics.Run_dir+"skdcd.pid",
+		PidFileName: Config.Maics.Run_dir+"maics.pid",
 		PidFilePerm: 0644,
 		LogFileName: Config.Maics.Log_dir+"daemon.log",
 		LogFilePerm: 0640,
-		WorkDir:     Config.Maics.Dir+"daemons/",
+		//WorkDir:     Config.Maics.Dir+"daemons/",
 		Umask:       027,
 		Args:        []string{},
 	}

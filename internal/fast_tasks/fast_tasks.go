@@ -4,7 +4,6 @@ package fast_tasks
 import(
     ansible "github.com/lucabodd/go-ansible"
     "context"
-    "encoding/base64"
     "go.mongodb.org/mongo-driver/bson"
     "go.mongodb.org/mongo-driver/mongo"
     "go.mongodb.org/mongo-driver/mongo/options"
@@ -13,6 +12,7 @@ import(
     "os/user"
     "strings"
     . "github.com/lucabodd/maicsd/pkg/utils"
+    json "github.com/tidwall/gjson"
 )
 
 /***************************************
@@ -267,34 +267,51 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
 		error = ""
 		//read connection status
 		if err != nil {
-            error = res.RawStdout
-			if (strings.Contains(res.RawStdout, "Missing sudo") || strings.Contains(res.RawStdout, "password is required to run sudo") || strings.Contains(res.RawStdout, "sudo: not found")) {
-				conn = "SUDOERR"
-                error = "Shared connection to 10.60.0.170 closed. /bin/sh: 1: sudo: not found"
-			} else if(strings.Contains(res.RawStdout, "Failed to connect") || res.Unreachable > 0){
-				conn = "EARLY-FAIL"
-                log.Println(res)
-                log.Println(err)
-                Kill(1)
-			} else if(strings.Contains(res.RawStdout, "CLI-UNDEPLOYED")){
-				conn = "CLI-UNDEPLOYED"
-                log.Println(res.RawStdout)
-                log.Println(err)
-			} else {
-				conn = "UNKNOWN"
-                log.Println(res.RawStdout)
-                log.Println(err)
-			}
+            if(res.Unreachable > 0){
+                if(strings.Contains(res.RawStdout, "No route to host")){
+                    conn = "unreachable"
+                    error = json.Get(res.RawStdout, "plays.0.tasks.0.hosts.*.msg").String()
+                } else if (strings.Contains(res.RawStdout, "ssh_exchange_identification")) {
+                    conn = "proxy-refuse"
+                    error = json.Get(res.RawStdout, "plays.0.tasks.0.hosts.*.msg").String()
+                } else if (strings.Contains(res.RawStdout, "Permission denied (publickey")) {
+                    conn = "unauthorized"
+                    error = json.Get(res.RawStdout, "plays.0.tasks.0.hosts.*.msg").String()
+                } else {
+                    conn = "unknown"
+                    log.Println("ANSIBLE RUN ERROR -> ")
+                    log.Print(err)
+                    log.Println("ANSIBLE RUN STDOUT -> " + res.RawStdout)
+                    error = json.Get(res.RawStdout, "plays.0.tasks.0.hosts").String()
+                }
+            } else if (res.Failures > 0) {
+                if (strings.Contains(res.RawStdout, "maics-client-undeployed")){
+                    conn = "maics-client-undeployed"
+                    error = json.Get(res.RawStdout, "plays.0.tasks.1.hosts.*.msg").String()
+                } else {
+                    conn = "unknown"
+                    log.Println("ANSIBLE RUN ERROR -> ")
+                    log.Print(err)
+                    log.Println("ANSIBLE RUN STDOUT -> " + res.RawStdout)
+                    error = json.Get(res.RawStdout, "plays.0.tasks.0.hosts").String()
+                }
+            } else {
+                conn = "unknown"
+                log.Println("ANSIBLE RUN ERROR -> ")
+                log.Print(err)
+                log.Println("ANSIBLE RUN STDOUT -> " + res.RawStdout)
+                error = json.Get(res.RawStdout, "plays.0.tasks.0.hosts").String()
+            }
 			//logging
 			if error != "" {
 				log.Println("    |- "+h.Hostname+" Error establishing connection, detected error "+conn+" might be fixed in SKDC host-mgmt")
 			}
 		} else {
-			conn = "TRUE"
+			conn = "true"
+            error = "false"
 		}
 		error = strings.Replace(error, "\n", "", -1)
 		error = strings.Replace(error, "  ", "", -1)
-		error = base64.StdEncoding.EncodeToString([]byte(error))
 		_, err = hosts.UpdateOne(context.TODO(), bson.M{"hostname":h.Hostname }, bson.M{ "$set": bson.M{ "connection" : conn, "error": error }})
 		Check(err)
 	}
