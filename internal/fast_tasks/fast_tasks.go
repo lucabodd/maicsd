@@ -271,12 +271,21 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
                 if(strings.Contains(res.RawStdout, "No route to host")){
                     conn = "unreachable"
                     error = json.Get(res.RawStdout, "plays.0.tasks.0.hosts.*.msg").String()
+                    // Adding start & end time
+                    error += "\n Start Time:"+ json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.start").String()
+                    error += "\n End Time:" + json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.end").String()
                 } else if (strings.Contains(res.RawStdout, "ssh_exchange_identification")) {
                     conn = "proxy-refuse"
                     error = json.Get(res.RawStdout, "plays.0.tasks.0.hosts.*.msg").String()
+                    // Adding start & end time
+                    error += "\n Start Time:"+ json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.start").String()
+                    error += "\n End Time:" + json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.end").String()
                 } else if (strings.Contains(res.RawStdout, "Permission denied (publickey")) {
                     conn = "unauthorized"
                     error = json.Get(res.RawStdout, "plays.0.tasks.0.hosts.*.msg").String()
+                    // Adding start & end time
+                    error += "\n Start Time:"+ json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.start").String()
+                    error += "\n End Time:" + json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.end").String()
                 } else {
                     conn = "unknown"
                     log.Println("ANSIBLE RUN ERROR -> ")
@@ -288,6 +297,9 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
                 if (strings.Contains(res.RawStdout, "maics-client-undeployed")){
                     conn = "maics-client-undeployed"
                     error = json.Get(res.RawStdout, "plays.0.tasks.1.hosts.*.msg").String()
+                    // Adding start & end time
+                    error += "\n Start Time:"+ json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.start").String()
+                    error += "\n End Time:" + json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.end").String()
                 } else {
                     conn = "unknown"
                     log.Println("ANSIBLE RUN ERROR -> ")
@@ -318,7 +330,7 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
 	log.Println("    |[+] Access control deployed according to SKDC user defined rules")
 }
 
-func MaicsWardsDeploy(mdb *mongo.Client, mongo_instance string, skdc_user string, skdc_dir string, base_dn string, ldap_host string, bind_dn string, bind_password string) {
+func MaicsWardsDeploy(mdb *mongo.Client, mongo_instance string, skdc_user string, skdc_dir string, ldap_uri string, ldap_tls_ca string, ldap_base_dn string, ldap_read_only_dn string, ldap_read_only_password string) {
 	log.Println("[*] Undergoing client deployment")
 	log.Println(" |___")
 
@@ -340,8 +352,29 @@ func MaicsWardsDeploy(mdb *mongo.Client, mongo_instance string, skdc_user string
 	err = cur.Err()
 	Check(err)
 
+	//here - todo
+	// add playbook ldap-deploy below,
 
 	for _, h := range res_hosts {
+        playbook := &ansible.PlaybookCmd{
+			Playbook:          skdc_dir+"ansible/playbooks/ldap_client.yml",
+			ConnectionOptions: &ansible.PlaybookConnectionOptions{},
+			Options:           &ansible.PlaybookOptions{
+                        			Inventory: skdc_dir+"ansible/inventory",
+                        			Limit: h.Hostname,
+                        			ExtraVars: map[string]interface{}{
+                        				"ldap_tls_ca": ldap_tls_ca,
+                        				"ldap_uri": ldap_uri,
+                                        "ldap_base_dn": ldap_base_dn,
+                        				"ldap_read_only_dn": bind_dn,
+                        				"ldap_read_only_password": bind_password,
+                        		    },
+		                        },
+        }
+        _, err = playbook.Run()
+		SoftCheck(err)
+        log.Println("    |- LDAP client deployed to: "+h.Hostname)
+
         playbook := &ansible.PlaybookCmd{
 			Playbook:          skdc_dir+"ansible/playbooks/skdc-ward-deploy.yml",
 			ConnectionOptions: &ansible.PlaybookConnectionOptions{},
@@ -357,10 +390,10 @@ func MaicsWardsDeploy(mdb *mongo.Client, mongo_instance string, skdc_user string
 		                        },
         }
 		_, err = playbook.Run()
-		Check(err)
+		SoftCheck(err)
 		log.Println("    |- client deployed to: "+h.Hostname)
 		_, err = hosts.UpdateOne(context.TODO(), bson.M{"hostname":h.Hostname }, bson.M{ "$unset": bson.M{ "deploy_req" : 1}})
 		Check(err)
 	}
-	log.Println("[+] skdc-ward deployed according to SKDC requests")
+	log.Println("[+] maics-ward deployed according to MAICS requests")
 }

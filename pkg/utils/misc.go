@@ -12,6 +12,12 @@ func Check(e error) {
 	}
 }
 
+func SoftCheck(e error){
+	if e != nil {
+		log.Println(e)
+	}
+}
+
 func Kill(code int) {
 	os.Exit(code)
 }
