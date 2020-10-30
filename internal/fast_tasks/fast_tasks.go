@@ -365,6 +365,13 @@ func MaicsWardsDeploy(mdb *mongo.Client, mongo_instance string, skdc_user string
 	// add playbook ldap-deploy below,
 
 	for _, h := range res_hosts {
+        //removing ansible caches directory
+        usr, err := user.Current()
+    	Check(err)
+        err = os.RemoveAll(usr.HomeDir+"/.ansible/")
+        Check(err)
+
+        //Deploying ldap client
         playbook := &ansible.PlaybookCmd{
 			Playbook:          skdc_dir+"ansible/playbooks/ldap_client.yml",
 			ConnectionOptions: &ansible.PlaybookConnectionOptions{},
