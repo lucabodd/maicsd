@@ -11,6 +11,7 @@ import(
     "os"
     "os/user"
     "strings"
+    "time"
     . "github.com/lucabodd/maicsd/pkg/utils"
     json "github.com/tidwall/gjson"
 )
@@ -171,7 +172,7 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
 	// vars
 	findOptions := options.Find()
 	var conn string
-	error := ""
+	connection_detail := ""
 
 	// Define collections
 	hosts := mdb.Database(mongo_instance).Collection("hosts")
@@ -250,6 +251,12 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
 			sshd_config_access += "Match Group "+group_entry+"\n     AllowUsers *\n"
 		}
 
+        //removing ansible caches directory
+        usr, err := user.Current()
+    	Check(err)
+        err = os.RemoveAll(usr.HomeDir+"/.ansible/")
+        Check(err)
+
 		playbook := &ansible.PlaybookCmd{
 			Playbook:          skdc_dir+"ansible/playbooks/sshd-config-deploy.yml",
 			ConnectionOptions: &ansible.PlaybookConnectionOptions{},
@@ -264,67 +271,69 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
 		}
 
 		res, err := playbook.Run()
-		error = ""
 		//read connection status
 		if err != nil {
             if(res.Unreachable > 0){
-                if(strings.Contains(res.RawStdout, "No route to host")){
-                    conn = "unreachable"
-                    error = json.Get(res.RawStdout, "plays.0.tasks.0.hosts.*.msg").String()
-                    // Adding start & end time
-                    error += "\n Start Time:"+ json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.start").String()
-                    error += "\n End Time:" + json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.end").String()
-                } else if (strings.Contains(res.RawStdout, "ssh_exchange_identification")) {
+                if (strings.Contains(res.RawStdout, "ssh_exchange_identification")) {
                     conn = "proxy-refuse"
-                    error = json.Get(res.RawStdout, "plays.0.tasks.0.hosts.*.msg").String()
+                    connection_detail = json.Get(res.RawStdout, "plays.0.tasks.0.hosts.*.msg").String()
                     // Adding start & end time
-                    error += "\n Start Time:"+ json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.start").String()
-                    error += "\n End Time:" + json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.end").String()
+                    connection_detail += "<br><br> Start Time:<br>"+ json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.start").String()
+                    connection_detail += "<br><br> End Time:<br>" + json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.end").String()
+                } else if(strings.Contains(res.RawStdout, "No route to host") || strings.Contains(res.RawStdout, "Connection refused") || strings.Contains(res.RawStdout, "Connection timed out")){
+                    conn = "unreachable"
+                    connection_detail = json.Get(res.RawStdout, "plays.0.tasks.0.hosts.*.msg").String()
+                    // Adding start & end time
+                    connection_detail += "<br><br> Start Time:<br>"+ json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.start").String()
+                    connection_detail += "<br><br> End Time:<br>" + json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.end").String()
                 } else if (strings.Contains(res.RawStdout, "Permission denied (publickey")) {
                     conn = "unauthorized"
-                    error = json.Get(res.RawStdout, "plays.0.tasks.0.hosts.*.msg").String()
+                    connection_detail = json.Get(res.RawStdout, "plays.0.tasks.0.hosts.*.msg").String()
                     // Adding start & end time
-                    error += "\n Start Time:"+ json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.start").String()
-                    error += "\n End Time:" + json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.end").String()
+                    connection_detail += "<br><br> Start Time:<br>"+ json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.start").String()
+                    connection_detail += "<br><br> End Time:<br>" + json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.end").String()
                 } else {
                     conn = "unknown"
                     log.Println("ANSIBLE RUN ERROR -> ")
                     log.Print(err)
                     log.Println("ANSIBLE RUN STDOUT -> " + res.RawStdout)
-                    error = json.Get(res.RawStdout, "plays.0.tasks.0.hosts").String()
+                    connection_detail = json.Get(res.RawStdout, "plays.0.tasks.0.hosts").String()
                 }
             } else if (res.Failures > 0) {
-                if (strings.Contains(res.RawStdout, "maics-client-undeployed")){
-                    conn = "maics-client-undeployed"
-                    error = json.Get(res.RawStdout, "plays.0.tasks.1.hosts.*.msg").String()
+                if (strings.Contains(res.RawStdout, "maics-ward-undeployed")){
+                    conn = "maics-ward-undeployed"
+                    connection_detail = json.Get(res.RawStdout, "plays.0.tasks.1.hosts.*.msg").String()
                     // Adding start & end time
-                    error += "\n Start Time:"+ json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.start").String()
-                    error += "\n End Time:" + json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.end").String()
+                    connection_detail += "<br><br> Start Time:<br>"+ json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.start").String()
+                    connection_detail += "<br><br> End Time:<br>" + json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.end").String()
                 } else {
                     conn = "unknown"
                     log.Println("ANSIBLE RUN ERROR -> ")
                     log.Print(err)
                     log.Println("ANSIBLE RUN STDOUT -> " + res.RawStdout)
-                    error = json.Get(res.RawStdout, "plays.0.tasks.0.hosts").String()
+                    connection_detail = json.Get(res.RawStdout, "plays.0.tasks.0.hosts").String()
                 }
             } else {
                 conn = "unknown"
                 log.Println("ANSIBLE RUN ERROR -> ")
                 log.Print(err)
                 log.Println("ANSIBLE RUN STDOUT -> " + res.RawStdout)
-                error = json.Get(res.RawStdout, "plays.0.tasks.0.hosts").String()
+                connection_detail = json.Get(res.RawStdout, "plays.0.tasks.0.hosts").String()
             }
 			//logging
-			if error != "" {
+			if connection_detail != "" {
 				log.Println("    |- "+h.Hostname+" Error establishing connection, detected error "+conn+" might be fixed in SKDC host-mgmt")
 			}
 		} else {
 			conn = "true"
-            error = "false"
+            //format := "2020-10-29T23:56:32.777053Z"
+			now := time.Now().Format(time.RFC3339)
+            connection_detail = "Connected.<br>Access control last update: "+ now
+
 		}
-		error = strings.Replace(error, "\n", "", -1)
-		error = strings.Replace(error, "  ", "", -1)
-		_, err = hosts.UpdateOne(context.TODO(), bson.M{"hostname":h.Hostname }, bson.M{ "$set": bson.M{ "connection" : conn, "error": error }})
+		connection_detail = strings.Replace(connection_detail, "\n", "", -1)
+		connection_detail = strings.Replace(connection_detail, "  ", "", -1)
+		_, err = hosts.UpdateOne(context.TODO(), bson.M{"hostname":h.Hostname }, bson.M{ "$set": bson.M{ "connection" : conn, "connection_detail": connection_detail }})
 		Check(err)
 	}
 	log.Println("    |[+] Access control deployed according to SKDC user defined rules")
@@ -366,8 +375,8 @@ func MaicsWardsDeploy(mdb *mongo.Client, mongo_instance string, skdc_user string
                         				"ldap_tls_ca": ldap_tls_ca,
                         				"ldap_uri": ldap_uri,
                                         "ldap_base_dn": ldap_base_dn,
-                        				"ldap_read_only_dn": bind_dn,
-                        				"ldap_read_only_password": bind_password,
+                        				"ldap_read_only_dn": ldap_read_only_dn,
+                        				"ldap_read_only_password": ldap_read_only_password,
                         		    },
 		                        },
         }
@@ -375,17 +384,17 @@ func MaicsWardsDeploy(mdb *mongo.Client, mongo_instance string, skdc_user string
 		SoftCheck(err)
         log.Println("    |- LDAP client deployed to: "+h.Hostname)
 
-        playbook := &ansible.PlaybookCmd{
-			Playbook:          skdc_dir+"ansible/playbooks/skdc-ward-deploy.yml",
+        playbook = &ansible.PlaybookCmd{
+			Playbook:          skdc_dir+"ansible/playbooks/maics-ward-deploy.yml",
 			ConnectionOptions: &ansible.PlaybookConnectionOptions{},
 			Options:           &ansible.PlaybookOptions{
                         			Inventory: skdc_dir+"ansible/inventory",
                         			Limit: h.Hostname,
                         			ExtraVars: map[string]interface{}{
-                        				"base": base_dn,
-                        				"host": ldap_host,
-                        				"bind_dn": bind_dn,
-                        				"bind_password": bind_password,
+                        				"ldap_base_dn": ldap_base_dn,
+                        				"ldap_uri": ldap_uri,
+                        				"ldap_read_only_dn": ldap_read_only_dn,
+                        				"ldap_read_only_password": ldap_read_only_password,
                         		    },
 		                        },
         }
