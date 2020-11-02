@@ -73,6 +73,7 @@ func AccessMatrixReport (maics_dir string) {
 }
 
 func LdapSync(mdb *mongo.Client, mongo_instance string, ldap *ldap_client.LDAPClient) {
+    log.Println("[*] Undergoing LDAP sync")
     users := mdb.Database(mongo_instance).Collection("users")
 
     findOptProj := options.Find().SetProjection(bson.M{"sys_username": 1})
@@ -90,4 +91,5 @@ func LdapSync(mdb *mongo.Client, mongo_instance string, ldap *ldap_client.LDAPCl
         _, err = users.UpdateOne(context.TODO(), bson.M{"sys_username":user.Sys_username }, bson.M{ "$set": bson.M{"pwdAccountLockedTime": locked, "pwdChangedTime": pwd_last_changed }})
         Check(err)
     }
+    log.Println("[+] LDAP synced successfully")
 }
