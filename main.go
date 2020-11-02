@@ -32,6 +32,7 @@ type Configuration struct {
 		Run_dir string
 		User	string
 		Admin_mail string
+		Ssh_key_lifetime int
 	}
 	Mongo struct {
 		Url 	string
@@ -166,9 +167,13 @@ LOOP:
 				}
 			}
 			//tasks below are executed every 10 minutes
-			slow_tasks.SshKeyExpire(mdb, Config.Mongo.Instance, ldap)
+			// cypher ssh key if expired
+			slow_tasks.SshKeyExpire(mdb, Config.Mongo.Instance, ldap, Config.Maics.Ssh_key_lifetime)
+			// sync pwdAccountLockedTime and pwdChangedTime
+			slow_tasks.LdapSync(mdb, Config.Mongo.Instance, ldap)
 			//gen xlsx
-			//slow_tasks.AccessMatrixReport()
+			slow_tasks.AccessMatrixReport(Config.Maics.Dir)
+
 		    log.Println("[+] .xlsx report generated successfully")
 			t1=time.Now()
 			t2=time.Now()

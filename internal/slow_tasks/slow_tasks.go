@@ -30,13 +30,13 @@ type User struct {
 /************************************
 	Task executed every 10 minutes
 *************************************/
-func SshKeyExpire(mdb *mongo.Client, mongo_instance string, ldap *ldap_client.LDAPClient){
+func SshKeyExpire(mdb *mongo.Client, mongo_instance string, ldap *ldap_client.LDAPClient, ssh_key_lifetime int){
 	log.Println("[*] Undergoing key expiration procedure")
 	log.Println(" |___")
 
 	// vars
 	users := mdb.Database(mongo_instance).Collection("users")
-	expirationDelta := 9
+	expirationDelta := ssh_key_lifetime / 3600 // convert seconds to hours
 
 	findOptProj := options.Find().SetProjection(bson.M{"sys_username":1, "email":1, "pubKey": 1, "otp_secret":1, "key_last_unlock":1})
 	cur, err := users.Find(context.TODO(), bson.M{ "pubKey": bson.M{ "$exists": true, "$nin": bson.A{nil, ""} }}, findOptProj)
@@ -66,9 +66,28 @@ func SshKeyExpire(mdb *mongo.Client, mongo_instance string, ldap *ldap_client.LD
 	log.Println("[+] Expired keys locked successfully")
 }
 
-func AccessMatrixReport () {
-    cmd := exec.Command("/usr/bin/python", "../../scripts/report.py")
+func AccessMatrixReport (maics_dir string) {
+    cmd := exec.Command("/usr/bin/python", maics_dir + "reports/scripts/report.py", maics_dir)
     err := cmd.Run()
-    log.Println(err)
     Check(err)
+}
+
+func LdapSync(mdb *mongo.Client, mongo_instance string, ldap *ldap_client.LDAPClient) {
+    users := mdb.Database(mongo_instance).Collection("users")
+
+    findOptProj := options.Find().SetProjection(bson.M{"sys_username": 1})
+    cur, err := users.Find(context.TODO(), bson.M{}, findOptProj)
+    Check(err)
+
+    for cur.Next(context.TODO()) {
+		var user User
+		err := cur.Decode(&user)
+		Check(err)
+        locked, err := ldap.GetUserAttribute(user.Sys_username, "pwdAccountLockedTime")
+        SoftCheck(err)
+        pwd_last_changed, err := ldap.GetUserAttribute(user.Sys_username, "pwdChangedTime")
+        SoftCheck(err)
+        _, err = users.UpdateOne(context.TODO(), bson.M{"sys_username":user.Sys_username }, bson.M{ "$set": bson.M{"pwdAccountLockedTime": locked, "pwdChangedTime": pwd_last_changed }})
+        Check(err)
+    }
 }
