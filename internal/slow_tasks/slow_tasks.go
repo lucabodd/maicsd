@@ -46,6 +46,7 @@ func SshKeyExpire(mdb *mongo.Client, mongo_instance string, ldap *ldap_client.LD
 		var user User
 		err := cur.Decode(&user)
 		Check(err)
+        //redo
 		diff := TimeHoursDiff(user.Key_last_unlock)
 		if (diff >= expirationDelta) {
 			//cipher string only if it is unciphered
@@ -88,7 +89,9 @@ func LdapSync(mdb *mongo.Client, mongo_instance string, ldap *ldap_client.LDAPCl
         SoftCheck(err)
         pwd_last_changed, err := ldap.GetUserAttribute(user.Sys_username, "pwdChangedTime")
         SoftCheck(err)
-        _, err = users.UpdateOne(context.TODO(), bson.M{"sys_username":user.Sys_username }, bson.M{ "$set": bson.M{"pwdAccountLockedTime": locked, "pwdChangedTime": pwd_last_changed }})
+        sshPublicKey, err := ldap.GetUserAttribute(user.Sys_username, "sshPublicKey")
+        SoftCheck(err)
+        _, err = users.UpdateOne(context.TODO(), bson.M{"sys_username":user.Sys_username }, bson.M{ "$set": bson.M{"pwdAccountLockedTime": locked, "pwdChangedTime": pwd_last_changed, "sshPublicKey": sshPublicKey }})
         Check(err)
     }
     log.Println("[+] LDAP synced successfully")

@@ -373,7 +373,7 @@ func MaicsWardsDeploy(mdb *mongo.Client, mongo_instance string, skdc_user string
 
         //Deploying ldap client
         playbook := &ansible.PlaybookCmd{
-			Playbook:          skdc_dir+"ansible/playbooks/ldap_client.yml",
+			Playbook:          skdc_dir+"ansible/playbooks/ldap-client.yml",
 			ConnectionOptions: &ansible.PlaybookConnectionOptions{},
 			Options:           &ansible.PlaybookOptions{
                         			Inventory: skdc_dir+"ansible/inventory",
@@ -387,7 +387,8 @@ func MaicsWardsDeploy(mdb *mongo.Client, mongo_instance string, skdc_user string
                         		    },
 		                        },
         }
-        _, err = playbook.Run()
+        res, err := playbook.Run()
+        log.Println(res)
 		SoftCheck(err)
         log.Println("    |- LDAP client deployed to: "+h.Hostname)
 
