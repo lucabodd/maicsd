@@ -62,7 +62,7 @@ type User struct {
 ****************************************/
 
 //generate ~/.ssh/config file according to hosts stored in mongodb
-func SshConfigGenerator(mdb *mongo.Client, mongo_instance string, skdc_user string){
+func SshConfigGenerator(mdb *mongo.Client, mongo_instance string){
 	log.Println("[*] Generating ssh config")
 	//vars
 	bt := 0
@@ -86,7 +86,7 @@ func SshConfigGenerator(mdb *mongo.Client, mongo_instance string, skdc_user stri
 	   bc, err := f.WriteString("Host "+host.Hostname+"\n")
 	   bt += bc
 	   Check(err)
-	   bc, err = f.WriteString("    User "+skdc_user+"\n")
+	   bc, err = f.WriteString("    User root\n")
 	   bt += bc
 	   Check(err)
 	   if(host.Proxy == "none") {
@@ -180,10 +180,10 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
     access_groups := mdb.Database(mongo_instance).Collection("access_groups")
 	users := mdb.Database(mongo_instance).Collection("users")
 
-	// Get all Hosts
+	// Get all Hosts without a deploy req SYN
 	var res_hosts []*Host
-	findOptProj := options.Find().SetProjection(bson.M{"hostname": 1, "port": 1})
-	cur, err := hosts.Find(context.TODO(), bson.D{{}}, findOptProj)
+	findOptProj := options.Find().SetProjection(bson.M{"hostname": 1, "port": 1 })
+	cur, err := hosts.Find(context.TODO(), bson.M{ "deploy_req": bson.M{ "$exists": false }}, findOptProj)
 	Check(err)
 	defer cur.Close(context.TODO())
 	for cur.Next(context.TODO()) {
@@ -194,6 +194,13 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
 	}
 	err = cur.Err()
 	Check(err)
+
+    //removing ansible caches directory
+    usr, err := user.Current()
+    Check(err)
+    err = os.RemoveAll(usr.HomeDir+"/.ansible/")
+    SoftCheck(err)
+
 
 	// Iterate trough all hosts and define ACL_users
 	for _, h := range res_hosts {
@@ -251,12 +258,6 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
 			sshd_config_access += "Match Group "+group_entry+"\n     AllowUsers *\n"
 		}
 
-        //removing ansible caches directory
-        usr, err := user.Current()
-    	Check(err)
-        err = os.RemoveAll(usr.HomeDir+"/.ansible/")
-        Check(err)
-
 		playbook := &ansible.PlaybookCmd{
 			Playbook:          skdc_dir+"ansible/playbooks/sshd-config-deploy.yml",
 			ConnectionOptions: &ansible.PlaybookConnectionOptions{},
@@ -267,6 +268,7 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
     				                                "sshd_allow_block": sshd_config_access,
     				                                "maics_ssh_port": h.Port,
     			                                 },
+                                    FlushCache: true,
                                },
 		}
 
@@ -336,7 +338,7 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
 		_, err = hosts.UpdateOne(context.TODO(), bson.M{"hostname":h.Hostname }, bson.M{ "$set": bson.M{ "connection" : conn, "connection_detail": connection_detail }})
 		Check(err)
 	}
-	log.Println("    |[+] Access control deployed according to SKDC user defined rules")
+	log.Println("    |[+] Access control deployed according to MAICS user defined rules")
 }
 
 func MaicsWardsDeploy(mdb *mongo.Client, mongo_instance string, skdc_user string, skdc_dir string, ldap_uri string, ldap_tls_ca string, ldap_base_dn string, ldap_read_only_dn string, ldap_read_only_password string) {
@@ -361,9 +363,6 @@ func MaicsWardsDeploy(mdb *mongo.Client, mongo_instance string, skdc_user string
 	err = cur.Err()
 	Check(err)
 
-	//here - todo
-	// add playbook ldap-deploy below,
-
 	for _, h := range res_hosts {
         //removing ansible caches directory
         usr, err := user.Current()
@@ -387,8 +386,7 @@ func MaicsWardsDeploy(mdb *mongo.Client, mongo_instance string, skdc_user string
                         		    },
 		                        },
         }
-        res, err := playbook.Run()
-        log.Println(res)
+        _, err = playbook.Run()
 		SoftCheck(err)
         log.Println("    |- LDAP client deployed to: "+h.Hostname)
 
@@ -403,6 +401,7 @@ func MaicsWardsDeploy(mdb *mongo.Client, mongo_instance string, skdc_user string
                         				"ldap_uri": ldap_uri,
                         				"ldap_read_only_dn": ldap_read_only_dn,
                         				"ldap_read_only_password": ldap_read_only_password,
+                                        "maics_user": skdc_user,
                         		    },
 		                        },
         }
