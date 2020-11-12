@@ -19,7 +19,7 @@ func AESencrypt(keyStr string, cryptoText string) string {
 	return encrypt(keyBytes[:], cryptoText)
 }
 
-// NOT EXPORTED - encrypt string to base64 crypto using AES
+// encrypt string to base64 crypto using AES
 func encrypt(key []byte, text string) string {
 	plaintext := []byte(text)
 
@@ -39,16 +39,15 @@ func encrypt(key []byte, text string) string {
 	return base64.StdEncoding.EncodeToString(ciphertext)
 }
 
-// NOT EXPORTED - decrypt from base64 to decrypted string
 /***************************************
 	AES decryption
 ****************************************/
-
 func AESdecrypt(keyStr string, cryptoText string) string {
 	keyBytes := sha256.Sum256([]byte(keyStr))
 	return decrypt(keyBytes[:], cryptoText)
 }
 
+// decrypt from base64 to decrypted string
 func decrypt(key []byte, cryptoText string) string {
 	ciphertext, err := base64.StdEncoding.DecodeString(cryptoText)
 	Check(err)

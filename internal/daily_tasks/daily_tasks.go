@@ -27,7 +27,7 @@ type User struct {
 	Email string `bson:"email"`
 	Role string `bson:"role"`
 	Key_last_unlock string `bson:"key_last_unlock"`
-	PubKey string `bson:"pubKey"`
+	PubKey string `bson:"sshPublicKey"`
 	Password string `bson:"password"`
 	Otp_secret string `bson:"otp_secret"`
 	PwdChangedTime string `bson:"pwdChangedTime"`
@@ -83,7 +83,7 @@ func PasswordExpire(mdb *mongo.Client, mongo_instance string, skdc_dir string, a
 			now := time.Now().Format(format)
 			_, err = ldap.AddUserAttribute(user.Sys_username, "pwdAccountLockedTime", now)
 			Check(err)
-			_, err = users.UpdateOne(context.TODO(), bson.M{"email":user.Email }, bson.M{ "$set": bson.M{ "pwdAccountLockedTime" : now, "key_last_unlock": "19700101000010Z" }, "$unset": bson.M{"otp_secret":1, "pubKey":1}})
+			_, err = users.UpdateOne(context.TODO(), bson.M{"email":user.Email }, bson.M{ "$set": bson.M{ "pwdAccountLockedTime" : now, "key_last_unlock": "19700101000010Z" }, "$unset": bson.M{"otp_secret":1, "sshPublicKey":1}})
             Check(err)
 			_, err = ldap.SetUserAttribute(user.Sys_username, "sshPublicKey", "")
 			Check(err)

@@ -50,7 +50,7 @@ type User struct {
 	Email string `bson:"email"`
 	Role string `bson:"role"`
 	Key_last_unlock string `bson:"key_last_unlock"`
-	PubKey string `bson:"pubKey"`
+	PubKey string `bson:"sshPublicKey"`
 	Password string `bson:"password"`
 	Otp_secret string `bson:"otp_secret"`
 	PwdChangedTime string `bson:"pwdChangedTime"`

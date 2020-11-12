@@ -154,10 +154,11 @@ LOOP:
 		for int(t3.Sub(t4).Minutes()) <= 1440 {
 			for int(t2.Sub(t1).Minutes()) <= 10 {
 				// Quick tasks, below are executed instantly
+				slow_tasks.SshKeyExpire(mdb, Config.Mongo.Instance, ldap, Config.Maics.Ssh_key_lifetime)
 				fast_tasks.SshConfigGenerator(mdb, Config.Mongo.Instance)
 				fast_tasks.AnsibleInventoryGenerator(mdb, Config.Mongo.Instance, Config.Maics.Dir )
 				fast_tasks.MaicsWardsDeploy(mdb, Config.Mongo.Instance, Config.Maics.User, Config.Maics.Dir, Config.Ldap.Uri, Config.Ldap.TLS.CA, Config.Ldap.Base_dn, Config.Ldap.Read_only_dn, Config.Ldap.Read_only_password)
-				fast_tasks.AccessControlDeploy(mdb, Config.Mongo.Instance, Config.Maics.User,Config.Maics.Dir )
+				//fast_tasks.AccessControlDeploy(mdb, Config.Mongo.Instance, Config.Maics.User,Config.Maics.Dir )
 
 				t2=time.Now()
 				// instantly quit when reciveing SIGTERM

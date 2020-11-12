@@ -11,6 +11,8 @@ import (
     . "github.com/lucabodd/maicsd/pkg/utils"
     "strings"
     "os/exec"
+    "crypto/sha512"
+	"encoding/hex"
 )
 
 type User struct {
@@ -18,9 +20,10 @@ type User struct {
 	Email string `bson:"email"`
 	Role string `bson:"role"`
 	Key_last_unlock string `bson:"key_last_unlock"`
-	PubKey string `bson:"pubKey"`
+	SshPublicKey string `bson:"sshPublicKey"`
 	Password string `bson:"password"`
 	Otp_secret string `bson:"otp_secret"`
+    Token_publicKey string `bson:"token_publicKey"`
 	PwdChangedTime string `bson:"pwdChangedTime"`
 	PwdAccountLockedTime *string `bson:"pwdAccountLockedTime"`
 }
@@ -38,8 +41,8 @@ func SshKeyExpire(mdb *mongo.Client, mongo_instance string, ldap *ldap_client.LD
 	users := mdb.Database(mongo_instance).Collection("users")
 	expirationDelta := ssh_key_lifetime / 3600 // convert seconds to hours
 
-	findOptProj := options.Find().SetProjection(bson.M{"sys_username":1, "email":1, "pubKey": 1, "otp_secret":1, "key_last_unlock":1})
-	cur, err := users.Find(context.TODO(), bson.M{ "pubKey": bson.M{ "$exists": true, "$nin": bson.A{nil, ""} }}, findOptProj)
+	findOptProj := options.Find().SetProjection(bson.M{"sys_username":1, "email":1, "sshPublicKey": 1, "otp_secret":1, "token_publicKey":1, "key_last_unlock":1})
+	cur, err := users.Find(context.TODO(), bson.M{ "sshPublicKey": bson.M{ "$exists": true, "$ne": "" }}, findOptProj)
 	Check(err)
 	defer cur.Close(context.TODO())
 	for cur.Next(context.TODO()) {
@@ -50,17 +53,33 @@ func SshKeyExpire(mdb *mongo.Client, mongo_instance string, ldap *ldap_client.LD
 		diff := TimeHoursDiff(user.Key_last_unlock)
 		if (diff >= expirationDelta) {
 			//cipher string only if it is unciphered
-			if(strings.Contains(user.PubKey, "ssh-rsa")) {
-				//return a byte string
-				b32_decoded_otp_secret, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(user.Otp_secret)
+			if(strings.Contains(user.SshPublicKey, "ssh-rsa")) {
+				b32_decoded_otp_secret, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(user.Otp_secret) //return a byte string
 				Check(err)
-				key := b32_decoded_otp_secret
-				encKey := AESencrypt(string(key), user.PubKey)
-				_, err = users.UpdateOne(context.TODO(), bson.M{"email":user.Email }, bson.M{ "$set": bson.M{ "pubKey" : encKey}})
+                //calculate hashes to generate master key
+                //hash otp_secret
+                sha_512 := sha512.New()
+	            sha_512.Write(b32_decoded_otp_secret)
+                otp_secret_hash:=hex.EncodeToString(sha_512.Sum(nil))
+
+                //hash token_secret
+                sha_512 = sha512.New()
+	            sha_512.Write([]byte(user.Token_publicKey))
+                token_secret_hash := hex.EncodeToString(sha_512.Sum(nil))
+
+                //hash the hashes :D and generate key
+                to_hash := otp_secret_hash+token_secret_hash
+                sha_512 = sha512.New()
+	            sha_512.Write([]byte(to_hash))
+                key := hex.EncodeToString(sha_512.Sum(nil))
+
+				encKey := AESencrypt(key, user.SshPublicKey)
+				_, err = users.UpdateOne(context.TODO(), bson.M{"email":user.Email }, bson.M{ "$set": bson.M{ "sshPublicKey" : encKey}})
 				Check(err)
 				_, err = ldap.SetUserAttribute(user.Sys_username, "sshPublicKey", encKey)
 				Check(err)
 				log.Println("    |- SSH public key for user "+user.Sys_username+" Locked due to expiration")
+                Kill(1)
 			}
 		}
 	}
