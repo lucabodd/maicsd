@@ -79,7 +79,6 @@ func SshKeyExpire(mdb *mongo.Client, mongo_instance string, ldap *ldap_client.LD
 				_, err = ldap.SetUserAttribute(user.Sys_username, "sshPublicKey", encKey)
 				Check(err)
 				log.Println("    |- SSH public key for user "+user.Sys_username+" Locked due to expiration")
-                Kill(1)
 			}
 		}
 	}
