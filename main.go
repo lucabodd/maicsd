@@ -168,10 +168,10 @@ LOOP:
 				}
 			}
 			//tasks below are executed every 10 minutes
-			// cypher ssh key if expired
-			slow_tasks.SshKeyExpire(mdb, Config.Mongo.Instance, ldap, Config.Maics.Ssh_key_lifetime)
 			// sync pwdAccountLockedTime and pwdChangedTime
 			slow_tasks.LdapSync(mdb, Config.Mongo.Instance, ldap)
+			// cypher ssh key if expired
+			slow_tasks.SshKeyExpire(mdb, Config.Mongo.Instance, ldap, Config.Maics.Ssh_key_lifetime)
 			//gen xlsx
 			slow_tasks.AccessMatrixReport(Config.Maics.Dir)
 

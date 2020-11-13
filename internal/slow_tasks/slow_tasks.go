@@ -50,6 +50,7 @@ func SshKeyExpire(mdb *mongo.Client, mongo_instance string, ldap *ldap_client.LD
 		err := cur.Decode(&user)
 		Check(err)
         //redo
+        log.Println(user.Key_last_unlock)
 		diff := TimeHoursDiff(user.Key_last_unlock)
 		if (diff >= expirationDelta) {
 			//cipher string only if it is unciphered
