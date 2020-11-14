@@ -54,22 +54,29 @@ func SshKeyExpire(mdb *mongo.Client, mongo_instance string, ldap *ldap_client.LD
 		if (diff >= expirationDelta) {
 			//cipher string only if it is unciphered
 			if(strings.Contains(user.SshPublicKey, "ssh-rsa")) {
-				b32_decoded_otp_secret, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(user.Otp_secret) //return a byte string
-				Check(err)
+
                 //calculate hashes to generate master key
+                otp_secret_hash := ""
+                token_secret_hash := ""
                 //hash otp_secret
-                sha_512 := sha512.New()
-	            sha_512.Write(b32_decoded_otp_secret)
-                otp_secret_hash:=hex.EncodeToString(sha_512.Sum(nil))
+                if(user.Otp_secret != ""){
+                    b32_decoded_otp_secret, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(user.Otp_secret) //return a byte string
+    				Check(err)
+                    sha_512 := sha512.New()
+    	            sha_512.Write(b32_decoded_otp_secret)
+                    otp_secret_hash=hex.EncodeToString(sha_512.Sum(nil))
+                }
 
                 //hash token_secret
-                sha_512 = sha512.New()
-	            sha_512.Write([]byte(user.Token_publicKey))
-                token_secret_hash := hex.EncodeToString(sha_512.Sum(nil))
+                if (user.Token_publicKey != ""){
+                    sha_512 := sha512.New()
+                    sha_512.Write([]byte(user.Token_publicKey))
+                    token_secret_hash = hex.EncodeToString(sha_512.Sum(nil))
+                }
 
                 //hash the hashes :D and generate key
                 to_hash := otp_secret_hash+token_secret_hash
-                sha_512 = sha512.New()
+                sha_512 := sha512.New()
 	            sha_512.Write([]byte(to_hash))
                 key := hex.EncodeToString(sha_512.Sum(nil))
 
@@ -93,6 +100,7 @@ func AccessMatrixReport (maics_dir string) {
 
 func LdapSync(mdb *mongo.Client, mongo_instance string, ldap *ldap_client.LDAPClient) {
     log.Println("[*] Undergoing LDAP sync")
+    log.Println(" |___")
     users := mdb.Database(mongo_instance).Collection("users")
 
     findOptProj := options.Find().SetProjection(bson.M{"sys_username": 1})
@@ -103,14 +111,19 @@ func LdapSync(mdb *mongo.Client, mongo_instance string, ldap *ldap_client.LDAPCl
 		var user User
 		err := cur.Decode(&user)
 		Check(err)
-        locked, err := ldap.GetUserAttribute(user.Sys_username, "pwdAccountLockedTime")
-        SoftCheck(err)
-        pwd_last_changed, err := ldap.GetUserAttribute(user.Sys_username, "pwdChangedTime")
-        SoftCheck(err)
-        sshPublicKey, err := ldap.GetUserAttribute(user.Sys_username, "sshPublicKey")
-        SoftCheck(err)
-        _, err = users.UpdateOne(context.TODO(), bson.M{"sys_username":user.Sys_username }, bson.M{ "$set": bson.M{"pwdAccountLockedTime": locked, "pwdChangedTime": pwd_last_changed, "sshPublicKey": sshPublicKey }})
-        Check(err)
+        locked, err_1 := ldap.GetUserAttribute(user.Sys_username, "pwdAccountLockedTime")
+        SoftCheck(err_1)
+        pwd_last_changed, err_2 := ldap.GetUserAttribute(user.Sys_username, "pwdChangedTime")
+        SoftCheck(err_2)
+        sshPublicKey, err_3 := ldap.GetUserAttribute(user.Sys_username, "sshPublicKey")
+        SoftCheck(err_3)
+        if(err_1 == nil && err_2 == nil && err_3 == nil){
+            _, err = users.UpdateOne(context.TODO(), bson.M{"sys_username":user.Sys_username }, bson.M{ "$set": bson.M{"pwdAccountLockedTime": locked, "pwdChangedTime": pwd_last_changed, "sshPublicKey": sshPublicKey }})
+            Check(err)
+            log.Println("    |- user "+user.Sys_username+" has been successfully synced from LDAP")
+        } else {
+            log.Println("[-] LDAP syncronization error, skipping...")
+        }
     }
-    log.Println("[+] LDAP synced successfully")
+
 }
