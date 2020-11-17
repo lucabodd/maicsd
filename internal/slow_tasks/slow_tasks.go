@@ -117,8 +117,13 @@ func LdapSync(mdb *mongo.Client, mongo_instance string, ldap *ldap_client.LDAPCl
         SoftCheck(err_2)
         sshPublicKey, err_3 := ldap.GetUserAttribute(user.Sys_username, "sshPublicKey")
         SoftCheck(err_3)
-        if(err_1 == nil && err_2 == nil && err_3 == nil){
-            _, err = users.UpdateOne(context.TODO(), bson.M{"sys_username":user.Sys_username }, bson.M{ "$set": bson.M{"pwdAccountLockedTime": locked, "pwdChangedTime": pwd_last_changed, "sshPublicKey": sshPublicKey }})
+        loginShell, err_4 := ldap.GetUserAttribute(user.Sys_username, "loginShell")
+        SoftCheck(err_4)
+        if(err_1 == nil && err_2 == nil && err_3 == nil && err_4 == nil){
+            _, err = users.UpdateOne(context.TODO(), bson.M{"sys_username":user.Sys_username }, bson.M{ "$set": bson.M{"pwdAccountLockedTime": locked,
+                                                                                                                       "pwdChangedTime": pwd_last_changed,
+                                                                                                                       "sshPublicKey": sshPublicKey,
+                                                                                                                       "loginShell": loginShell, }})
             Check(err)
             log.Println("    |- user "+user.Sys_username+" has been successfully synced from LDAP")
         } else {
