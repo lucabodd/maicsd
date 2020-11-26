@@ -45,6 +45,22 @@ type Access_user struct {
     Hostname string `bson:"hostname"`
 }
 
+type Command_set struct {
+    Name string `bson:"name"`
+    Commands []Command
+}
+
+type Command struct {
+    Path string `bson:"path"`
+    Access_mode string `bson:"access_mode"`
+}
+
+type Confinement_shell struct {
+    Name string `bson:"name"`
+    Mode string `bson:"mode"`
+    Command_sets []string `bson:"command_sets"`
+}
+
 type User struct {
 	Sys_username string `bson:"sys_username"`
 	Email string `bson:"email"`
@@ -412,4 +428,78 @@ func MaicsWardsDeploy(mdb *mongo.Client, mongo_instance string, skdc_user string
 		Check(err)
 	}
 	log.Println("[+] maics-ward deployed according to MAICS requests")
+}
+
+func ConfinementShellDeploy(mdb *mongo.Client, mongo_instance string, skdc_dir string) {
+	log.Println("[*] Undergoing confinement shell deployment")
+	log.Println(" |___")
+
+    // Define collections
+	hosts := mdb.Database(mongo_instance).Collection("hosts")
+    confinement_shells := mdb.Database(mongo_instance).Collection("confinement_shells")
+    command_sets := mdb.Database(mongo_instance).Collection("command_sets")
+
+    // Get all Hosts and generate string for limiting inventory
+	var res_hosts []string
+	findOptProj := options.Find().SetProjection(bson.M{"hostname": 1})
+	cur, err := hosts.Find(context.TODO(), bson.M{ "connection": "true"}, findOptProj)
+	Check(err)
+	defer cur.Close(context.TODO())
+    for cur.Next(context.TODO()) {
+	   var host Host
+	   err := cur.Decode(&host)
+	   Check(err)
+	   res_hosts = append(res_hosts, host.Hostname)
+	}
+	err = cur.Err()
+	Check(err)
+
+
+    findOptProj = options.Find()
+	cur, err = confinement_shells.Find(context.TODO(), bson.D{{}}, findOptProj)
+    Check(err)
+	defer cur.Close(context.TODO())
+    for cur.Next(context.TODO()) {
+	   var shell Confinement_shell
+	   err := cur.Decode(&shell)
+	   Check(err)
+
+       //get all commands assigned to a shell useing command_sets array
+       var all_commands [] string
+       for _, command_set_name := range shell.Command_sets {
+           findOptProj = options.Find()
+       	   curs, err := command_sets.Find(context.TODO(), bson.M{ "name": command_set_name }, findOptProj)
+           Check(err)
+       	   defer curs.Close(context.TODO())
+           for curs.Next(context.TODO()) {
+       	       var cs Command_set
+       	       err := curs.Decode(&cs)
+       	       Check(err)
+               for _, cmd := range cs.Commands {
+                   all_commands = append(all_commands, cmd.Path+" "+cmd.Access_mode+",")
+               }
+           }
+       }
+
+       //Deploy restricted shell
+       playbook := &ansible.PlaybookCmd{
+           Playbook:          skdc_dir+"ansible/playbooks/confinement-shells-deploy.yml",
+           ConnectionOptions: &ansible.PlaybookConnectionOptions{},
+           Options:           &ansible.PlaybookOptions{
+                                   Inventory: skdc_dir+"ansible/inventory",
+                                   Limit: strings.Join(res_hosts[:],","),
+                                   ExtraVars: map[string]interface{}{
+                                       "shell_name": shell.Name,
+                                       "default_shell": "/bin/bash",
+                                       "shell_mode": shell.Mode,
+                                       "command_sets": strings.Join(all_commands[:], "\n  "),
+                                   },
+                               },
+       }
+       _, err = playbook.Run()
+       SoftCheck(err)
+	}
+	err = cur.Err()
+	Check(err)
+    log.Println("[+] Restricted shell deployed to connected host ")
 }

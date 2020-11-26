@@ -101,7 +101,7 @@ func main() {
 
 	log.Println("[+] Releasing OS pid")
 	log.Println("+ - - - - - - - - - - - - - - - - - - -+")
-	log.Println("|  SKDC host controller daemon started |")
+	log.Println("| MAICS host controller daemon started |")
     log.Println("+ - - - - - - - - - - - - - - - - - - -+")
 
 	go worker(Config)
@@ -110,7 +110,7 @@ func main() {
 	Check(err)
 
     log.Println("+ - - - - - - - - - - - - - - - - - - - - +")
-	log.Println("| SKDC host controller daemon terminated  |")
+	log.Println("| MAICS host controller daemon terminated |")
     log.Println("+ - - - - - - - - - - - - - - - - - - - - +")
 }
 
@@ -158,6 +158,7 @@ LOOP:
 				fast_tasks.AnsibleInventoryGenerator(mdb, Config.Mongo.Instance, Config.Maics.Dir )
 				fast_tasks.MaicsWardsDeploy(mdb, Config.Mongo.Instance, Config.Maics.User, Config.Maics.Dir, Config.Ldap.Uri, Config.Ldap.TLS.CA, Config.Ldap.Base_dn, Config.Ldap.Read_only_dn, Config.Ldap.Read_only_password)
 				fast_tasks.AccessControlDeploy(mdb, Config.Mongo.Instance, Config.Maics.User,Config.Maics.Dir )
+				fast_tasks.ConfinementShellDeploy(mdb, Config.Mongo.Instance ,Config.Maics.Dir)
 
 				t2=time.Now()
 				// instantly quit when reciveing SIGTERM
@@ -190,7 +191,7 @@ LOOP:
 
 //System signaling handling
 func termHandler(sig os.Signal) error {
-	log.Println("[*] System SIGQUIT recived, Terminating daemon sshd config on remote hosts won't be updated anymore...")
+	log.Println("[*] System SIGQUIT recived, Terminating daemon configs on remote hosts won't be updated anymore...")
 	log.Println("+ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -+")
 	log.Println("|       SIGQUIT: gracefully terminating pending processes          |")
     log.Println("+ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -+")
