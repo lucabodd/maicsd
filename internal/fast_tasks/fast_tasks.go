@@ -180,6 +180,122 @@ func AnsibleInventoryGenerator(mdb *mongo.Client, mongo_instance string, skdc_di
 	log.Println("[+] Ansible inventory generated according to MongoDB")
 }
 
+
+func GatherHostsFacts(mdb *mongo.Client, mongo_instance string, skdc_dir string ){
+    log.Println("[*] Undergoing Host Fact gathering")
+	log.Println(" |___")
+
+	// vars
+	var conn string
+	connection_detail := ""
+
+	// Define collections
+	hosts := mdb.Database(mongo_instance).Collection("hosts")
+
+	// Get all Hosts without a deploy req SYN
+	var res_hosts []*Host
+	findOptProj := options.Find().SetProjection(bson.M{"hostname": 1, "port": 1 })
+	cur, err := hosts.Find(context.TODO(), bson.M{ "deploy_req": bson.M{ "$exists": false }, "connection" : bson.M{"$ne": "true" } }, findOptProj)
+	Check(err)
+	defer cur.Close(context.TODO())
+	for cur.Next(context.TODO()) {
+	   var host Host
+	   err := cur.Decode(&host)
+	   Check(err)
+	   res_hosts = append(res_hosts, &host)
+	}
+	err = cur.Err()
+	Check(err)
+
+    //removing ansible caches directory
+    usr, err := user.Current()
+    Check(err)
+    err = os.RemoveAll(usr.HomeDir+"/.ansible/")
+    SoftCheck(err)
+
+
+	// Iterate trough all hosts and define ACL_users
+	for _, h := range res_hosts {
+		playbook := &ansible.PlaybookCmd{
+			Playbook:          skdc_dir+"ansible/playbooks/gather-hosts-facts.yml",
+			ConnectionOptions: &ansible.PlaybookConnectionOptions{},
+			Options:           &ansible.PlaybookOptions{
+    			                     Inventory: skdc_dir+"ansible/inventory",
+    			                     Limit: h.Hostname,
+    			                     ExtraVars: map[string]interface{}{},
+                                    FlushCache: true,
+                               },
+		}
+
+		res, err := playbook.Run()
+		//read connection status
+		if err != nil {
+            if(res.Unreachable > 0){
+                if (strings.Contains(res.RawStdout, "ssh_exchange_identification")) {
+                    conn = "proxy-refuse"
+                    connection_detail = json.Get(res.RawStdout, "plays.0.tasks.0.hosts.*.msg").String()
+                    // Adding start & end time
+                    connection_detail += "<br><br> Start Time:<br>"+ json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.start").String()
+                    connection_detail += "<br><br> End Time:<br>" + json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.end").String()
+                } else if(strings.Contains(res.RawStdout, "No route to host") || strings.Contains(res.RawStdout, "Connection refused") || strings.Contains(res.RawStdout, "Connection timed out")){
+                    conn = "unreachable"
+                    connection_detail = json.Get(res.RawStdout, "plays.0.tasks.0.hosts.*.msg").String()
+                    // Adding start & end time
+                    connection_detail += "<br><br> Start Time:<br>"+ json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.start").String()
+                    connection_detail += "<br><br> End Time:<br>" + json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.end").String()
+                } else if (strings.Contains(res.RawStdout, "Permission denied (publickey")) {
+                    conn = "unauthorized"
+                    connection_detail = json.Get(res.RawStdout, "plays.0.tasks.0.hosts.*.msg").String()
+                    // Adding start & end time
+                    connection_detail += "<br><br> Start Time:<br>"+ json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.start").String()
+                    connection_detail += "<br><br> End Time:<br>" + json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.end").String()
+                } else {
+                    conn = "unknown"
+                    log.Println("ANSIBLE RUN ERROR -> ")
+                    log.Print(err)
+                    log.Println("ANSIBLE RUN STDOUT -> " + res.RawStdout)
+                    connection_detail = json.Get(res.RawStdout, "plays.0.tasks.0.hosts").String()
+                }
+            } else if (res.Failures > 0) {
+                if (strings.Contains(res.RawStdout, "maics-ward-undeployed")){
+                    conn = "maics-ward-undeployed"
+                    connection_detail = json.Get(res.RawStdout, "plays.0.tasks.1.hosts.*.msg").String()
+                    // Adding start & end time
+                    connection_detail += "<br><br> Start Time:<br>"+ json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.start").String()
+                    connection_detail += "<br><br> End Time:<br>" + json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.end").String()
+                } else {
+                    conn = "unknown"
+                    log.Println("ANSIBLE RUN ERROR -> ")
+                    log.Print(err)
+                    log.Println("ANSIBLE RUN STDOUT -> " + res.RawStdout)
+                    connection_detail = json.Get(res.RawStdout, "plays.0.tasks.0.hosts").String()
+                }
+            } else {
+                conn = "unknown"
+                log.Println("ANSIBLE RUN ERROR -> ")
+                log.Print(err)
+                log.Println("ANSIBLE RUN STDOUT -> " + res.RawStdout)
+                connection_detail = json.Get(res.RawStdout, "plays.0.tasks.0.hosts").String()
+            }
+			//logging
+			if connection_detail != "" {
+				log.Println("    |- "+h.Hostname+" Error establishing connection, detected error "+conn+" might be fixed in MAICS host-mgmt")
+			}
+		} else {
+			conn = "true"
+            //format := "2020-10-29T23:56:32.777053Z"
+			now := time.Now().Format(time.RFC3339)
+            connection_detail = "Connected.<br>Access control last update: "+ now
+
+		}
+		connection_detail = strings.Replace(connection_detail, "\n", "", -1)
+		connection_detail = strings.Replace(connection_detail, "  ", "", -1)
+		_, err = hosts.UpdateOne(context.TODO(), bson.M{"hostname":h.Hostname }, bson.M{ "$set": bson.M{ "connection" : conn, "connection_detail": connection_detail }})
+		Check(err)
+	}
+	log.Println("    |[+] Gathered Host facts for unconnected hosts")
+}
+
 //Access control deploy -> write sshd config file
 func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user string, skdc_dir string ){
 	log.Println("[*] Undergoing Access deploy to managed hosts")
@@ -199,7 +315,7 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
 	// Get all Hosts without a deploy req SYN
 	var res_hosts []*Host
 	findOptProj := options.Find().SetProjection(bson.M{"hostname": 1, "port": 1 })
-	cur, err := hosts.Find(context.TODO(), bson.M{ "deploy_req": bson.M{ "$exists": false }}, findOptProj)
+	cur, err := hosts.Find(context.TODO(), bson.M{ "connection": "true", "deploy_req": bson.M{ "$exists": false }}, findOptProj)
 	Check(err)
 	defer cur.Close(context.TODO())
 	for cur.Next(context.TODO()) {
@@ -288,9 +404,9 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
                                },
 		}
 
+        //reparsing connection status as in GatherHostsFacts in order to check if host is still alive
 		res, err := playbook.Run()
-		//read connection status
-		if err != nil {
+        if err != nil {
             if(res.Unreachable > 0){
                 if (strings.Contains(res.RawStdout, "ssh_exchange_identification")) {
                     conn = "proxy-refuse"
@@ -340,7 +456,7 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
             }
 			//logging
 			if connection_detail != "" {
-				log.Println("    |- "+h.Hostname+" Error establishing connection, detected error "+conn+" might be fixed in SKDC host-mgmt")
+				log.Println("    |- "+h.Hostname+" Error establishing connection, detected error "+conn+" might be fixed in MAICS host-mgmt")
 			}
 		} else {
 			conn = "true"
@@ -354,7 +470,7 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
 		_, err = hosts.UpdateOne(context.TODO(), bson.M{"hostname":h.Hostname }, bson.M{ "$set": bson.M{ "connection" : conn, "connection_detail": connection_detail }})
 		Check(err)
 	}
-	log.Println("    |[+] Access control deployed according to MAICS user defined rules")
+	log.Println("    |[+] Access control deployed")
 }
 
 func MaicsWardsDeploy(mdb *mongo.Client, mongo_instance string, skdc_user string, skdc_dir string, ldap_uri string, ldap_tls_ca string, ldap_base_dn string, ldap_read_only_dn string, ldap_read_only_password string) {
@@ -454,52 +570,55 @@ func ConfinementShellDeploy(mdb *mongo.Client, mongo_instance string, skdc_dir s
 	err = cur.Err()
 	Check(err)
 
+    if(len(res_hosts)>0){
+        findOptProj = options.Find()
+    	cur, err = confinement_shells.Find(context.TODO(), bson.D{{}}, findOptProj)
+        Check(err)
+    	defer cur.Close(context.TODO())
+        for cur.Next(context.TODO()) {
+    	   var shell Confinement_shell
+    	   err := cur.Decode(&shell)
+    	   Check(err)
 
-    findOptProj = options.Find()
-	cur, err = confinement_shells.Find(context.TODO(), bson.D{{}}, findOptProj)
-    Check(err)
-	defer cur.Close(context.TODO())
-    for cur.Next(context.TODO()) {
-	   var shell Confinement_shell
-	   err := cur.Decode(&shell)
-	   Check(err)
-
-       //get all commands assigned to a shell useing command_sets array
-       var all_commands [] string
-       for _, command_set_name := range shell.Command_sets {
-           findOptProj = options.Find()
-       	   curs, err := command_sets.Find(context.TODO(), bson.M{ "name": command_set_name }, findOptProj)
-           Check(err)
-       	   defer curs.Close(context.TODO())
-           for curs.Next(context.TODO()) {
-       	       var cs Command_set
-       	       err := curs.Decode(&cs)
-       	       Check(err)
-               for _, cmd := range cs.Commands {
-                   all_commands = append(all_commands, cmd.Path+" "+cmd.Access_mode+",")
+           //get all commands assigned to a shell useing command_sets array
+           var all_commands [] string
+           for _, command_set_name := range shell.Command_sets {
+               findOptProj = options.Find()
+           	   curs, err := command_sets.Find(context.TODO(), bson.M{ "name": command_set_name }, findOptProj)
+               Check(err)
+           	   defer curs.Close(context.TODO())
+               for curs.Next(context.TODO()) {
+           	       var cs Command_set
+           	       err := curs.Decode(&cs)
+           	       Check(err)
+                   for _, cmd := range cs.Commands {
+                       all_commands = append(all_commands, cmd.Path+" "+cmd.Access_mode+",")
+                   }
                }
            }
-       }
 
-       //Deploy restricted shell
-       playbook := &ansible.PlaybookCmd{
-           Playbook:          skdc_dir+"ansible/playbooks/confinement-shells-deploy.yml",
-           ConnectionOptions: &ansible.PlaybookConnectionOptions{},
-           Options:           &ansible.PlaybookOptions{
-                                   Inventory: skdc_dir+"ansible/inventory",
-                                   Limit: strings.Join(res_hosts[:],","),
-                                   ExtraVars: map[string]interface{}{
-                                       "shell_name": shell.Name,
-                                       "default_shell": "/bin/bash",
-                                       "shell_mode": shell.Mode,
-                                       "command_sets": strings.Join(all_commands[:], "\n  "),
+           //Deploy restricted shell
+           playbook := &ansible.PlaybookCmd{
+               Playbook:          skdc_dir+"ansible/playbooks/confinement-shells-deploy.yml",
+               ConnectionOptions: &ansible.PlaybookConnectionOptions{},
+               Options:           &ansible.PlaybookOptions{
+                                       Inventory: skdc_dir+"ansible/inventory",
+                                       Limit: strings.Join(res_hosts[:],","),
+                                       ExtraVars: map[string]interface{}{
+                                           "shell_name": shell.Name,
+                                           "default_shell": "/bin/bash",
+                                           "shell_mode": shell.Mode,
+                                           "command_sets": strings.Join(all_commands[:], "\n  "),
+                                       },
                                    },
-                               },
-       }
-       _, err = playbook.Run()
-       SoftCheck(err)
-	}
-	err = cur.Err()
-	Check(err)
-    log.Println("[+] Restricted shell deployed to connected host ")
+           }
+           _, err = playbook.Run()
+           SoftCheck(err)
+    	}
+    	err = cur.Err()
+    	Check(err)
+        log.Println("    |[+] Restricted shell deployed to connected host ")
+    } else{
+        log.Println("    |[*] MAICS not managing any host yet. ")
+    }
 }
