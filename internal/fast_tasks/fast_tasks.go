@@ -11,9 +11,8 @@ import(
     "os"
     "os/user"
     "strings"
-    "time"
     . "github.com/lucabodd/maicsd/pkg/utils"
-    json "github.com/tidwall/gjson"
+    "github.com/lucabodd/maicsd/internal/utils"
 )
 
 /***************************************
@@ -80,6 +79,7 @@ type User struct {
 //generate ~/.ssh/config file according to hosts stored in mongodb
 func SshConfigGenerator(mdb *mongo.Client, mongo_instance string){
 	log.Println("[*] Generating ssh config")
+    log.Println(" |___")
 	//vars
 	bt := 0
 	usr, err := user.Current()
@@ -126,12 +126,13 @@ func SshConfigGenerator(mdb *mongo.Client, mongo_instance string){
 	}
 	f.Sync()
 	log.Println("    |- bytes written:", bt)
-	log.Println("[+] SSH config generated according to MongoDB")
+	log.Println("    |[+] SSH config generated according to MongoDB")
 }
 
 //generate ansible inventory file according to hosts stored in mongodb
 func AnsibleInventoryGenerator(mdb *mongo.Client, mongo_instance string, skdc_dir string){
 	log.Println("[*] Generating ansible inventory")
+    log.Println(" |___")
 	// vars
 	findOptions := options.Find()
 	f, err := os.Create(skdc_dir+"ansible/inventory")
@@ -177,7 +178,7 @@ func AnsibleInventoryGenerator(mdb *mongo.Client, mongo_instance string, skdc_di
  	}
 	f.Sync()
 	log.Println("    |- bytes written:", bt)
-	log.Println("[+] Ansible inventory generated according to MongoDB")
+	log.Println("    |[+] Ansible inventory generated according to MongoDB")
 }
 
 
@@ -185,17 +186,13 @@ func GatherHostsFacts(mdb *mongo.Client, mongo_instance string, skdc_dir string 
     log.Println("[*] Undergoing Host Fact gathering")
 	log.Println(" |___")
 
-	// vars
-	var conn string
-	connection_detail := ""
-
 	// Define collections
 	hosts := mdb.Database(mongo_instance).Collection("hosts")
 
 	// Get all Hosts without a deploy req SYN
 	var res_hosts []*Host
 	findOptProj := options.Find().SetProjection(bson.M{"hostname": 1, "port": 1 })
-	cur, err := hosts.Find(context.TODO(), bson.M{ "deploy_req": bson.M{ "$exists": false }, "connection" : bson.M{"$ne": "true" } }, findOptProj)
+	cur, err := hosts.Find(context.TODO(), bson.M{ "deploy_req": bson.M{ "$exists": false }, "connection" : bson.M{"$nin": [2]string{"true", "unknown"} } }, findOptProj)
 	Check(err)
 	defer cur.Close(context.TODO())
 	for cur.Next(context.TODO()) {
@@ -228,68 +225,14 @@ func GatherHostsFacts(mdb *mongo.Client, mongo_instance string, skdc_dir string 
 		}
 
 		res, err := playbook.Run()
-		//read connection status
-		if err != nil {
-            if(res.Unreachable > 0){
-                if (strings.Contains(res.RawStdout, "ssh_exchange_identification")) {
-                    conn = "proxy-refuse"
-                    connection_detail = json.Get(res.RawStdout, "plays.0.tasks.0.hosts.*.msg").String()
-                    // Adding start & end time
-                    connection_detail += "<br><br> Start Time:<br>"+ json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.start").String()
-                    connection_detail += "<br><br> End Time:<br>" + json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.end").String()
-                } else if(strings.Contains(res.RawStdout, "No route to host") || strings.Contains(res.RawStdout, "Connection refused") || strings.Contains(res.RawStdout, "Connection timed out")){
-                    conn = "unreachable"
-                    connection_detail = json.Get(res.RawStdout, "plays.0.tasks.0.hosts.*.msg").String()
-                    // Adding start & end time
-                    connection_detail += "<br><br> Start Time:<br>"+ json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.start").String()
-                    connection_detail += "<br><br> End Time:<br>" + json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.end").String()
-                } else if (strings.Contains(res.RawStdout, "Permission denied (publickey")) {
-                    conn = "unauthorized"
-                    connection_detail = json.Get(res.RawStdout, "plays.0.tasks.0.hosts.*.msg").String()
-                    // Adding start & end time
-                    connection_detail += "<br><br> Start Time:<br>"+ json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.start").String()
-                    connection_detail += "<br><br> End Time:<br>" + json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.end").String()
-                } else {
-                    conn = "unknown"
-                    log.Println("ANSIBLE RUN ERROR -> ")
-                    log.Print(err)
-                    log.Println("ANSIBLE RUN STDOUT -> " + res.RawStdout)
-                    connection_detail = json.Get(res.RawStdout, "plays.0.tasks.0.hosts").String()
-                }
-            } else if (res.Failures > 0) {
-                if (strings.Contains(res.RawStdout, "maics-ward-undeployed")){
-                    conn = "maics-ward-undeployed"
-                    connection_detail = json.Get(res.RawStdout, "plays.0.tasks.1.hosts.*.msg").String()
-                    // Adding start & end time
-                    connection_detail += "<br><br> Start Time:<br>"+ json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.start").String()
-                    connection_detail += "<br><br> End Time:<br>" + json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.end").String()
-                } else {
-                    conn = "unknown"
-                    log.Println("ANSIBLE RUN ERROR -> ")
-                    log.Print(err)
-                    log.Println("ANSIBLE RUN STDOUT -> " + res.RawStdout)
-                    connection_detail = json.Get(res.RawStdout, "plays.0.tasks.0.hosts").String()
-                }
-            } else {
-                conn = "unknown"
-                log.Println("ANSIBLE RUN ERROR -> ")
-                log.Print(err)
-                log.Println("ANSIBLE RUN STDOUT -> " + res.RawStdout)
-                connection_detail = json.Get(res.RawStdout, "plays.0.tasks.0.hosts").String()
-            }
-			//logging
-			if connection_detail != "" {
-				log.Println("    |- "+h.Hostname+" Error establishing connection, detected error "+conn+" might be fixed in MAICS host-mgmt")
-			}
-		} else {
-			conn = "true"
-            //format := "2020-10-29T23:56:32.777053Z"
-			now := time.Now().Format(time.RFC3339)
-            connection_detail = "Connected.<br>Access control last update: "+ now
+		//parse connection
+        conn, connection_detail := utils.AnsibleParseResult(res, err)
 
-		}
-		connection_detail = strings.Replace(connection_detail, "\n", "", -1)
-		connection_detail = strings.Replace(connection_detail, "  ", "", -1)
+        //logging
+        if (conn != "true") {
+            log.Println("    |- "+h.Hostname+" Error establishing connection, detected error "+conn+" might be fixed in MAICS host-mgmt")
+        }
+
 		_, err = hosts.UpdateOne(context.TODO(), bson.M{"hostname":h.Hostname }, bson.M{ "$set": bson.M{ "connection" : conn, "connection_detail": connection_detail }})
 		Check(err)
 	}
@@ -303,8 +246,6 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
 
 	// vars
 	findOptions := options.Find()
-	var conn string
-	connection_detail := ""
 
 	// Define collections
 	hosts := mdb.Database(mongo_instance).Collection("hosts")
@@ -406,67 +347,12 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
 
         //reparsing connection status as in GatherHostsFacts in order to check if host is still alive
 		res, err := playbook.Run()
-        if err != nil {
-            if(res.Unreachable > 0){
-                if (strings.Contains(res.RawStdout, "ssh_exchange_identification")) {
-                    conn = "proxy-refuse"
-                    connection_detail = json.Get(res.RawStdout, "plays.0.tasks.0.hosts.*.msg").String()
-                    // Adding start & end time
-                    connection_detail += "<br><br> Start Time:<br>"+ json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.start").String()
-                    connection_detail += "<br><br> End Time:<br>" + json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.end").String()
-                } else if(strings.Contains(res.RawStdout, "No route to host") || strings.Contains(res.RawStdout, "Connection refused") || strings.Contains(res.RawStdout, "Connection timed out")){
-                    conn = "unreachable"
-                    connection_detail = json.Get(res.RawStdout, "plays.0.tasks.0.hosts.*.msg").String()
-                    // Adding start & end time
-                    connection_detail += "<br><br> Start Time:<br>"+ json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.start").String()
-                    connection_detail += "<br><br> End Time:<br>" + json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.end").String()
-                } else if (strings.Contains(res.RawStdout, "Permission denied (publickey")) {
-                    conn = "unauthorized"
-                    connection_detail = json.Get(res.RawStdout, "plays.0.tasks.0.hosts.*.msg").String()
-                    // Adding start & end time
-                    connection_detail += "<br><br> Start Time:<br>"+ json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.start").String()
-                    connection_detail += "<br><br> End Time:<br>" + json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.end").String()
-                } else {
-                    conn = "unknown"
-                    log.Println("ANSIBLE RUN ERROR -> ")
-                    log.Print(err)
-                    log.Println("ANSIBLE RUN STDOUT -> " + res.RawStdout)
-                    connection_detail = json.Get(res.RawStdout, "plays.0.tasks.0.hosts").String()
-                }
-            } else if (res.Failures > 0) {
-                if (strings.Contains(res.RawStdout, "maics-ward-undeployed")){
-                    conn = "maics-ward-undeployed"
-                    connection_detail = json.Get(res.RawStdout, "plays.0.tasks.1.hosts.*.msg").String()
-                    // Adding start & end time
-                    connection_detail += "<br><br> Start Time:<br>"+ json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.start").String()
-                    connection_detail += "<br><br> End Time:<br>" + json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.end").String()
-                } else {
-                    conn = "unknown"
-                    log.Println("ANSIBLE RUN ERROR -> ")
-                    log.Print(err)
-                    log.Println("ANSIBLE RUN STDOUT -> " + res.RawStdout)
-                    connection_detail = json.Get(res.RawStdout, "plays.0.tasks.0.hosts").String()
-                }
-            } else {
-                conn = "unknown"
-                log.Println("ANSIBLE RUN ERROR -> ")
-                log.Print(err)
-                log.Println("ANSIBLE RUN STDOUT -> " + res.RawStdout)
-                connection_detail = json.Get(res.RawStdout, "plays.0.tasks.0.hosts").String()
-            }
-			//logging
-			if connection_detail != "" {
-				log.Println("    |- "+h.Hostname+" Error establishing connection, detected error "+conn+" might be fixed in MAICS host-mgmt")
-			}
-		} else {
-			conn = "true"
-            //format := "2020-10-29T23:56:32.777053Z"
-			now := time.Now().Format(time.RFC3339)
-            connection_detail = "Connected.<br>Access control last update: "+ now
+        conn, connection_detail := utils.AnsibleParseResult(res, err)
+        //logging
+        if (conn != "true") {
+            log.Println("    |- "+h.Hostname+" Error establishing connection, detected error "+conn+" might be fixed in MAICS host-mgmt")
+        }
 
-		}
-		connection_detail = strings.Replace(connection_detail, "\n", "", -1)
-		connection_detail = strings.Replace(connection_detail, "  ", "", -1)
 		_, err = hosts.UpdateOne(context.TODO(), bson.M{"hostname":h.Hostname }, bson.M{ "$set": bson.M{ "connection" : conn, "connection_detail": connection_detail }})
 		Check(err)
 	}
@@ -495,55 +381,70 @@ func MaicsWardsDeploy(mdb *mongo.Client, mongo_instance string, skdc_user string
 	err = cur.Err()
 	Check(err)
 
-	for _, h := range res_hosts {
-        //removing ansible caches directory
-        usr, err := user.Current()
-    	Check(err)
-        err = os.RemoveAll(usr.HomeDir+"/.ansible/")
-        Check(err)
+    if(len(res_hosts)>0){
+    	for _, h := range res_hosts {
+            //removing ansible caches directory
+            usr, err := user.Current()
+        	Check(err)
+            err = os.RemoveAll(usr.HomeDir+"/.ansible/")
+            Check(err)
 
-        //Deploying ldap client
-        playbook := &ansible.PlaybookCmd{
-			Playbook:          skdc_dir+"ansible/playbooks/ldap-client.yml",
-			ConnectionOptions: &ansible.PlaybookConnectionOptions{},
-			Options:           &ansible.PlaybookOptions{
-                        			Inventory: skdc_dir+"ansible/inventory",
-                        			Limit: h.Hostname,
-                        			ExtraVars: map[string]interface{}{
-                        				"ldap_tls_ca": ldap_tls_ca,
-                        				"ldap_uri": ldap_uri,
-                                        "ldap_base_dn": ldap_base_dn,
-                        				"ldap_read_only_dn": ldap_read_only_dn,
-                        				"ldap_read_only_password": ldap_read_only_password,
-                        		    },
-		                        },
-        }
-        _, err = playbook.Run()
-		SoftCheck(err)
-        log.Println("    |- LDAP client deployed to: "+h.Hostname)
+            //Deploying ldap client
+            playbook := &ansible.PlaybookCmd{
+    			Playbook:          skdc_dir+"ansible/playbooks/ldap-client.yml",
+    			ConnectionOptions: &ansible.PlaybookConnectionOptions{},
+    			Options:           &ansible.PlaybookOptions{
+                            			Inventory: skdc_dir+"ansible/inventory",
+                            			Limit: h.Hostname,
+                            			ExtraVars: map[string]interface{}{
+                            				"ldap_tls_ca": ldap_tls_ca,
+                            				"ldap_uri": ldap_uri,
+                                            "ldap_base_dn": ldap_base_dn,
+                            				"ldap_read_only_dn": ldap_read_only_dn,
+                            				"ldap_read_only_password": ldap_read_only_password,
+                            		    },
+    		                        },
+            }
+            res, err := playbook.Run()
+            conn, connection_detail := utils.AnsibleParseResult(res, err)
+            if (conn != "true") {
+                log.Println("    |- ERROR occurred during LDAP deploy to : "+h.Hostname+" this will require manual action - error dumped to connection status")
+            } else {
+                log.Println("    |- LDAP client deployed to: "+h.Hostname)
+            }
 
-        playbook = &ansible.PlaybookCmd{
-			Playbook:          skdc_dir+"ansible/playbooks/maics-ward-deploy.yml",
-			ConnectionOptions: &ansible.PlaybookConnectionOptions{},
-			Options:           &ansible.PlaybookOptions{
-                        			Inventory: skdc_dir+"ansible/inventory",
-                        			Limit: h.Hostname,
-                        			ExtraVars: map[string]interface{}{
-                        				"ldap_base_dn": ldap_base_dn,
-                        				"ldap_uri": ldap_uri,
-                        				"ldap_read_only_dn": ldap_read_only_dn,
-                        				"ldap_read_only_password": ldap_read_only_password,
-                                        "maics_user": skdc_user,
-                        		    },
-		                        },
-        }
-		_, err = playbook.Run()
-		SoftCheck(err)
-		log.Println("    |- client deployed to: "+h.Hostname)
-		_, err = hosts.UpdateOne(context.TODO(), bson.M{"hostname":h.Hostname }, bson.M{ "$unset": bson.M{ "deploy_req" : 1}})
-		Check(err)
-	}
-	log.Println("[+] maics-ward deployed according to MAICS requests")
+            playbook = &ansible.PlaybookCmd{
+    			Playbook:          skdc_dir+"ansible/playbooks/maics-ward-deploy.yml",
+    			ConnectionOptions: &ansible.PlaybookConnectionOptions{},
+    			Options:           &ansible.PlaybookOptions{
+                            			Inventory: skdc_dir+"ansible/inventory",
+                            			Limit: h.Hostname,
+                            			ExtraVars: map[string]interface{}{
+                            				"ldap_base_dn": ldap_base_dn,
+                            				"ldap_uri": ldap_uri,
+                            				"ldap_read_only_dn": ldap_read_only_dn,
+                            				"ldap_read_only_password": ldap_read_only_password,
+                                            "maics_user": skdc_user,
+                            		    },
+    		                        },
+            }
+    		res, err = playbook.Run()
+            conn, connection_detail = utils.AnsibleParseResult(res, err)
+            if (conn != "true") {
+                log.Println("    |- ERROR occurred during LDAP deploy to : "+h.Hostname+" this will require manual action - error dumped to connection status")
+            } else {
+                log.Println("    |- LDAP client deployed to: "+h.Hostname)
+            }
+
+    		log.Println("    |- client deployed to: "+h.Hostname)
+    		_, err = hosts.UpdateOne(context.TODO(), bson.M{"hostname":h.Hostname }, bson.M{ "$unset": bson.M{ "deploy_req" : 1}, "$set": bson.M{ "connection" : conn, "connection_detail": connection_detail }})
+    		Check(err)
+    	}
+
+    	log.Println("    |[+] maics-ward deployed according to MAICS requests")
+    } else {
+        log.Println("    |[*] No deploy_req SYN detected, skipping...")
+    }
 }
 
 func ConfinementShellDeploy(mdb *mongo.Client, mongo_instance string, skdc_dir string) {
@@ -619,6 +520,6 @@ func ConfinementShellDeploy(mdb *mongo.Client, mongo_instance string, skdc_dir s
     	Check(err)
         log.Println("    |[+] Restricted shell deployed to connected host ")
     } else{
-        log.Println("    |[*] MAICS not managing any host yet. ")
+        log.Println("    |[*] MAICS not managing any host yet, skipping... ")
     }
 }
