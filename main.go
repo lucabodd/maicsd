@@ -55,7 +55,8 @@ type Configuration struct {
 
 func main() {
 	//parsing flags
-	c := flag.String("c", "","Specify the configuration file.")
+	var conf_file string
+	flag.StringVar(&conf_file, "c", "", "Specify the configuration file.")
     flag.Parse()
 
 	//Parsing system signaling
@@ -63,7 +64,7 @@ func main() {
 	daemon.AddCommand(daemon.StringFlag(signal, "stop"), syscall.SIGTERM, termHandler)
 	daemon.AddCommand(daemon.StringFlag(signal, "reload"), syscall.SIGHUP, reloadHandler)
 
-	file, err := os.Open(*c)
+	file, err := os.Open(conf_file)
 	if err != nil {
 		log.Fatal("[-] Can't open config file: ", err)
 	}

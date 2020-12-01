@@ -42,7 +42,7 @@ func AnsibleParseResult(res *ansible.PlaybookResults, err error) (string, string
         } else if (res.Failures > 0) {
             if (strings.Contains(res.RawStdout, "maics-ward-undeployed")){
                 conn = "maics-ward-undeployed"
-                connection_detail = json.Get(res.RawStdout, "plays.0.tasks.2.hosts.*.msg").String()
+                connection_detail = json.Get(res.RawStdout, "plays.0.tasks.1.hosts.*.msg").String()
                 // Adding start & end time
                 connection_detail += "<br><br> Start Time:<br>"+ json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.start").String()
                 connection_detail += "<br><br> End Time:<br>" + json.Get(res.RawStdout,"plays.0.tasks.0.task.duration.end").String()
