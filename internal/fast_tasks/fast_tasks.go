@@ -13,6 +13,7 @@ import(
     "strings"
     . "github.com/lucabodd/maicsd/pkg/utils"
     "github.com/lucabodd/maicsd/internal/utils"
+    json "github.com/tidwall/gjson"
 )
 
 /***************************************
@@ -41,6 +42,11 @@ type Access_user struct {
 	Email string `bson:"email"`
     Name string `bson:"name"`
     Surname string `bson:"surname"`
+    Hostname string `bson:"hostname"`
+}
+
+type Access_robot struct {
+    Sys_username string `bson:"sys_username"`
     Hostname string `bson:"hostname"`
 }
 
@@ -192,7 +198,7 @@ func GatherHostsFacts(mdb *mongo.Client, mongo_instance string, skdc_dir string 
 	// Get all Hosts without a deploy req SYN
 	var res_hosts []*Host
 	findOptProj := options.Find().SetProjection(bson.M{"hostname": 1, "port": 1 })
-	cur, err := hosts.Find(context.TODO(), bson.M{ "deploy_req": bson.M{ "$exists": false }, "connection" : bson.M{"$nin": [2]string{"true", "unknown"} } }, findOptProj)
+	cur, err := hosts.Find(context.TODO(), bson.M{ "deploy_req": bson.M{ "$exists": false }, "$or": []interface{}{ bson.M{ "connection" : bson.M{"$ne": "true"}}, bson.M{"ecdsaPublicKey": ""}, }, }, findOptProj)
 	Check(err)
 	defer cur.Close(context.TODO())
 	for cur.Next(context.TODO()) {
@@ -224,16 +230,20 @@ func GatherHostsFacts(mdb *mongo.Client, mongo_instance string, skdc_dir string 
                                },
 		}
 
+        //ecdsa public key : plays►0►tasks►2►hosts►maics-fw-02►stdout
 		res, err := playbook.Run()
 		//parse connection
         conn, connection_detail := utils.AnsibleParseResult(res, err)
 
         //logging
+        ecdsaPublicKey:=""
         if (conn != "true") {
             log.Println("    |- "+h.Hostname+" Error establishing connection, detected error "+conn+" might be fixed in MAICS host-mgmt")
+        }else {
+            log.Println("    |- "+h.Hostname+" Connected retriveing ecdsa public key, detected: "+conn+".")
+            ecdsaPublicKey = json.Get(res.RawStdout, "plays.0.tasks.2.hosts.*.stdout").String()
         }
-
-		_, err = hosts.UpdateOne(context.TODO(), bson.M{"hostname":h.Hostname }, bson.M{ "$set": bson.M{ "connection" : conn, "connection_detail": connection_detail }})
+		_, err = hosts.UpdateOne(context.TODO(), bson.M{"hostname":h.Hostname }, bson.M{ "$set": bson.M{ "connection" : conn, "connection_detail": connection_detail, "ecdsaPublicKey" : ecdsaPublicKey }})
 		Check(err)
 	}
 	log.Println("    |[+] Gathered Host facts for unconnected hosts")
@@ -250,6 +260,7 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
 	// Define collections
 	hosts := mdb.Database(mongo_instance).Collection("hosts")
 	access_users := mdb.Database(mongo_instance).Collection("access_users")
+    access_robots := mdb.Database(mongo_instance).Collection("access_robots")
     access_groups := mdb.Database(mongo_instance).Collection("access_groups")
 	users := mdb.Database(mongo_instance).Collection("users")
 
@@ -291,6 +302,19 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
 		   ACL_users = append(ACL_users, access_entry.Sys_username)
 		}
 		err := cur.Err()
+		Check(err)
+
+        //find robots with access right to the host
+		cur, err = access_robots.Find(context.TODO(), bson.M{"hostname":h.Hostname}, findOptions)
+		Check(err)
+		defer cur.Close(context.TODO())
+		for cur.Next(context.TODO()) {
+		   var access_entry Access_robot
+		   err := cur.Decode(&access_entry)
+		   Check(err)
+		   ACL_users = append(ACL_users, access_entry.Sys_username)
+		}
+		err = cur.Err()
 		Check(err)
 
 		//find admins (Has system wide access)
@@ -359,7 +383,7 @@ func AccessControlDeploy(mdb *mongo.Client, mongo_instance string, skdc_user str
 	log.Println("    |[+] Access control deployed")
 }
 
-func MaicsWardsDeploy(mdb *mongo.Client, mongo_instance string, skdc_user string, skdc_dir string, ldap_uri string, ldap_tls_ca string, ldap_base_dn string, ldap_read_only_dn string, ldap_read_only_password string) {
+func MaicsWardsDeploy(mdb *mongo.Client, mongo_instance string, skdc_user string, skdc_dir string, ldap_uri string, ldap_tls_ca string, ldap_base_dn string, ldap_read_only_dn string, ldap_read_only_password string, maics_url string) {
 	log.Println("[*] Undergoing client deployment")
 	log.Println(" |___")
 
@@ -413,8 +437,9 @@ func MaicsWardsDeploy(mdb *mongo.Client, mongo_instance string, skdc_user string
                 log.Println("    |- LDAP client deployed to: "+h.Hostname)
             }
 
+            aes_shared_key := RandomString(32)
             playbook = &ansible.PlaybookCmd{
-    			Playbook:          skdc_dir+"ansible/playbooks/maics-ward-deploy.yml",
+    			Playbook:          skdc_dir+"ansible/playbooks/maics-wards-deploy.yml",
     			ConnectionOptions: &ansible.PlaybookConnectionOptions{},
     			Options:           &ansible.PlaybookOptions{
                             			Inventory: skdc_dir+"ansible/inventory",
@@ -425,6 +450,9 @@ func MaicsWardsDeploy(mdb *mongo.Client, mongo_instance string, skdc_user string
                             				"ldap_read_only_dn": ldap_read_only_dn,
                             				"ldap_read_only_password": ldap_read_only_password,
                                             "maics_user": skdc_user,
+                                            "host_id": h.Hostname,
+                                            "aes_shared_key": aes_shared_key,
+                                            "maics_url": maics_url,
                             		    },
     		                        },
             }
@@ -432,12 +460,13 @@ func MaicsWardsDeploy(mdb *mongo.Client, mongo_instance string, skdc_user string
             conn, connection_detail = utils.AnsibleParseResult(res, err)
             if (conn != "true") {
                 log.Println("    |- ERROR occurred during LDAP deploy to : "+h.Hostname+" this will require manual action - error dumped to connection status")
+                log.Println(err)
             } else {
                 log.Println("    |- LDAP client deployed to: "+h.Hostname)
             }
 
     		log.Println("    |- client deployed to: "+h.Hostname)
-    		_, err = hosts.UpdateOne(context.TODO(), bson.M{"hostname":h.Hostname }, bson.M{ "$unset": bson.M{ "deploy_req" : 1}, "$set": bson.M{ "connection" : conn, "connection_detail": connection_detail }})
+    		_, err = hosts.UpdateOne(context.TODO(), bson.M{"hostname":h.Hostname }, bson.M{ "$unset": bson.M{ "deploy_req" : 1}, "$set": bson.M{ "connection" : conn, "connection_detail": connection_detail, "aesSharedKey": aes_shared_key }})
     		Check(err)
     	}
 

@@ -27,6 +27,7 @@ var (
 )
 type Configuration struct {
 	Maics struct {
+		Url		string
 		Dir     string
 		Log_dir string
 		Run_dir string
@@ -158,7 +159,7 @@ LOOP:
 				fast_tasks.SshConfigGenerator(mdb, Config.Mongo.Instance)
 				fast_tasks.AnsibleInventoryGenerator(mdb, Config.Mongo.Instance, Config.Maics.Dir )
 				fast_tasks.GatherHostsFacts(mdb, Config.Mongo.Instance, Config.Maics.Dir )
-				fast_tasks.MaicsWardsDeploy(mdb, Config.Mongo.Instance, Config.Maics.User, Config.Maics.Dir, Config.Ldap.Uri, Config.Ldap.TLS.CA, Config.Ldap.Base_dn, Config.Ldap.Read_only_dn, Config.Ldap.Read_only_password)
+				fast_tasks.MaicsWardsDeploy(mdb, Config.Mongo.Instance, Config.Maics.User, Config.Maics.Dir, Config.Ldap.Uri, Config.Ldap.TLS.CA, Config.Ldap.Base_dn, Config.Ldap.Read_only_dn, Config.Ldap.Read_only_password, Config.Maics.Url)
 				fast_tasks.AccessControlDeploy(mdb, Config.Mongo.Instance, Config.Maics.User,Config.Maics.Dir )
 				fast_tasks.ConfinementShellDeploy(mdb, Config.Mongo.Instance ,Config.Maics.Dir)
 
