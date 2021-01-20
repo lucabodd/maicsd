@@ -73,7 +73,7 @@ func PasswordExpire(mdb *mongo.Client, mongo_instance string, skdc_dir string, a
 			//Mail parameters
 			subject := "MAICS - User "+user.Sys_username+" password is expiring soon"
             daysOld := strconv.Itoa(TimeDaysDiff(user.PwdChangedTime)) //# of days since password last change
-			txt := "Your password is "+daysOld+" old and will expire soon. please, log in clicking on the button below and change it as soon as possible"
+			txt := "Your password is "+daysOld+" old and will expire soon. <br>Please, log in clicking on the button below and change it as soon as possible"
 			body := strings.Replace(Templates.Standard,"%s",txt,-1)
 			err = SendMail("127.0.0.1:25", (&mail.Address{"MAICS", admin_mail}).String(), subject, body, []string{(&mail.Address{user.Sys_username, user.Email}).String()})
 			Check(err)
@@ -89,7 +89,7 @@ func PasswordExpire(mdb *mongo.Client, mongo_instance string, skdc_dir string, a
 			Check(err)
 			subject := "MAICS - User "+user.Sys_username+" password is expired"
             daysOld := strconv.Itoa(TimeDaysDiff(user.PwdChangedTime))
-			txt := "Your password is "+daysOld+" days old and is expired. Your account has been locked for security reason, please ask Administrators to unlock your account."
+			txt := "Your password is "+daysOld+" days old and is expired. <br>Your account has been locked for security reason, please ask Administrators to unlock your account."
 			body := strings.Replace(Templates.Nobutton,"%s",txt,-1)
 			err = SendMail("127.0.0.1:25", (&mail.Address{"MAICS", admin_mail}).String(), subject, body, []string{(&mail.Address{user.Sys_username, user.Email}).String()})
 			Check(err)

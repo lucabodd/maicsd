@@ -172,7 +172,7 @@ func AnsibleInventoryGenerator(mdb *mongo.Client, mongo_instance string, skdc_di
 
 	// write ungrouped hosts
 	findOptProj := options.Find().SetProjection(bson.M{"hostname": 1})
-	cur, err = hosts.Find(context.TODO(), bson.M{"hostgroup": "none"}, findOptProj)
+	cur, err = hosts.Find(context.TODO(), bson.M{"hostgroups": "none"}, findOptProj)
 	defer cur.Close(context.TODO())
 	for cur.Next(context.TODO()) {
 		var host Host
