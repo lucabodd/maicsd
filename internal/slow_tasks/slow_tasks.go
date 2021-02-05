@@ -93,9 +93,15 @@ func SshKeyExpire(mdb *mongo.Client, mongo_instance string, ldap *ldap_client.LD
 }
 
 func AccessMatrixReport (maics_dir string) {
-    cmd := exec.Command("/usr/bin/python", maics_dir + "reports/scripts/report.py", maics_dir)
+    cmd := exec.Command("/usr/bin/python", maics_dir + "reports/scripts/group-host-access-matrix.py", maics_dir)
     err := cmd.Run()
-    Check(err)
+    SoftCheck(err)
+    cmd = exec.Command("/usr/bin/python", maics_dir + "reports/scripts/user-host-access-matrix.py", maics_dir)
+    err = cmd.Run()
+    SoftCheck(err)
+    cmd = exec.Command("/usr/bin/python", maics_dir + "reports/scripts/robot-host-access-matrix.py", maics_dir)
+    err = cmd.Run()
+    SoftCheck(err)
 }
 
 func LdapSync(mdb *mongo.Client, mongo_instance string, ldap *ldap_client.LDAPClient) {
